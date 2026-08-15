@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bg-grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0b1736" />
+      <stop offset="65%" stop-color="#040817" />
+      <stop offset="100%" stop-color="#02030a" />
+    </radialGradient>
+
+    <!-- Solar Core Glow -->
+    <radialGradient id="sun-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="25%" stop-color="#fff176" />
+      <stop offset="55%" stop-color="#ffd166" />
+      <stop offset="85%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="rgba(245, 158, 11, 0)" />
+    </radialGradient>
+
+    <!-- Planet 1 Gradient (Cyan Earth) -->
+    <linearGradient id="planet-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#90e0ef" />
+      <stop offset="100%" stop-color="#0077b6" />
+    </linearGradient>
+
+    <!-- Planet 2 Gradient (Rust Mars) -->
+    <linearGradient id="planet-mars" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fca311" />
+      <stop offset="100%" stop-color="#e76f51" />
+    </linearGradient>
+
+    <!-- Planet 3 Gradient (Gas Giant Jupiter/Saturn) -->
+    <linearGradient id="planet-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffe49e" />
+      <stop offset="100%" stop-color="#d4a373" />
+    </linearGradient>
+
+    <!-- Filter for Neon Glow -->
+    <filter id="glow-filter" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="sun-filter" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Circular Space Badge Background -->
+  <circle cx="256" cy="256" r="246" fill="url(#bg-grad)" stroke="rgba(78, 168, 222, 0.4)" stroke-width="6" />
+
+  <!-- Subtle Stardust Stars -->
+  <circle cx="100" cy="120" r="2.5" fill="#ffffff" opacity="0.7" />
+  <circle cx="410" cy="140" r="2" fill="#4ea8de" opacity="0.6" />
+  <circle cx="390" cy="380" r="3" fill="#ffd166" opacity="0.8" />
+  <circle cx="130" cy="400" r="2" fill="#ffffff" opacity="0.5" />
+  <circle cx="220" cy="70" r="2.5" fill="#ffffff" opacity="0.6" />
+  <circle cx="440" cy="260" r="2" fill="#90e0ef" opacity="0.7" />
+
+  <!-- Outer Orbit Ellipse -->
+  <ellipse cx="256" cy="256" rx="205" ry="92" fill="none" stroke="rgba(78, 168, 222, 0.35)" stroke-width="3" transform="rotate(-26 256 256)" stroke-dasharray="12 8" />
+
+  <!-- Middle Orbit Ellipse -->
+  <ellipse cx="256" cy="256" rx="145" ry="65" fill="none" stroke="rgba(255, 209, 102, 0.45)" stroke-width="3.5" transform="rotate(32 256 256)" />
+
+  <!-- Inner Orbit Ellipse -->
+  <ellipse cx="256" cy="256" rx="88" ry="40" fill="none" stroke="rgba(231, 111, 81, 0.4)" stroke-width="2.5" transform="rotate(-15 256 256)" />
+
+  <!-- Sun Outer Corona Glow -->
+  <circle cx="256" cy="256" r="62" fill="url(#sun-glow)" opacity="0.85" filter="url(#sun-filter)" />
+  <!-- Sun Core Sphere -->
+  <circle cx="256" cy="256" r="34" fill="#fff5d6" />
+  <circle cx="256" cy="256" r="32" fill="url(#sun-glow)" />
+
+  <!-- Orbiting Planets -->
+  <!-- Inner Planet (Mercury / Rust) -->
+  <g transform="rotate(-15 256 256)">
+    <circle cx="172" cy="246" r="9" fill="url(#planet-mars)" filter="url(#glow-filter)" />
+  </g>
+
+  <!-- Middle Planet (Earth Cyan with Orbit Shadow) -->
+  <g transform="rotate(32 256 256)">
+    <circle cx="395" cy="245" r="17" fill="url(#planet-cyan)" filter="url(#glow-filter)" />
+    <!-- Mini Moon -->
+    <circle cx="418" cy="235" r="4.5" fill="#f0f4fc" opacity="0.9" />
+  </g>
+
+  <!-- Outer Ringed Planet (Saturn / Gold) -->
+  <g transform="rotate(-26 256 256)">
+    <!-- Saturn Ring Behind -->
+    <ellipse cx="85" cy="275" rx="32" ry="10" fill="none" stroke="rgba(244, 162, 97, 0.85)" stroke-width="4" transform="rotate(18 85 275)" />
+    <!-- Saturn Body -->
+    <circle cx="85" cy="275" r="16" fill="url(#planet-gold)" />
+    <!-- Saturn Ring Front -->
+    <path d="M 55,275 A 32 10 18 0 0 115,275" fill="none" stroke="rgba(255, 228, 158, 0.95)" stroke-width="4" />
+  </g>
+</svg>
