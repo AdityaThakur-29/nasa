@@ -133,9 +133,16 @@ import {
 import { compressDistanceKm, satelliteOffsetFactor, type ScaleConfig } from '../sim/scale';
 import type { RenderOrigin } from './floating-origin';
 import type { SharedCameraState } from './layered-cameras';
+import { ORBIT_LAYER } from './layers';
 
-/** Layer for the orbit pass. Distinct from the slab and star field layers. */
-export const ORBIT_LAYER = 5;
+/**
+ * Layer for the orbit pass, re-exported from ./layers.
+ *
+ * Defined there rather than here so every layer number has exactly one definition. Two
+ * copies that drifted apart would put a pass's camera and its objects on different layers,
+ * and the pass would silently render nothing.
+ */
+export { ORBIT_LAYER };
 
 /**
  * Points sampled per orbit.

@@ -61,6 +61,7 @@ import {
   verifyDepthPlan,
   type DepthCandidate,
   type DepthPlan,
+  type SlabId,
 } from './render/depth-slabs';
 import { FloatingOrigin } from './render/floating-origin';
 import { LayeredCameras } from './render/layered-cameras';
@@ -143,6 +144,31 @@ export interface AppOptions {
   readonly pixelRatio?: number;
 }
 
+/** Draw calls and triangles a single pass submitted. */
+export interface PassStats {
+  readonly calls: number;
+  readonly triangles: number;
+}
+
+/**
+ * Per-pass draw statistics for one frame.
+ *
+ * EXISTS BECAUSE AN AGGREGATE COUNT HID A TOTAL FAILURE. The slab cameras were once left
+ * on the default layer, so all three slab passes submitted nothing and every planet was
+ * invisible. The browser gate still passed, because its draw-call assertion summed calls
+ * across every pass and compared the total against a floor: the star field and the eight
+ * orbit lines cleared that floor on their own, so three empty passes went unnoticed.
+ *
+ * Recording each pass separately makes "this pass drew nothing" directly assertable, which
+ * is the only form of the check that could have caught it.
+ */
+export interface FramePassStats {
+  readonly starfield: PassStats;
+  readonly orbits: PassStats;
+  /** One entry per NON-EMPTY slab, keyed by slab id, in render order. */
+  readonly slabs: ReadonlyMap<SlabId, PassStats>;
+}
+
 /** Everything one frame produced, for the interface and for tests. */
 export interface FrameReport {
   readonly snapshot: SimulationSnapshot;
@@ -155,6 +181,8 @@ export interface FrameReport {
   /** Depth clears actually issued. Should equal plan.clearDepthCount. */
   readonly depthClears: number;
   readonly simulatedSecondsApplied: number;
+  /** What each pass actually submitted to the GPU. */
+  readonly passes: FramePassStats;
 }
 
 /**
@@ -426,7 +454,7 @@ export class SolarSystemApp {
       viewportHeightPx: this.heightPx,
     });
 
-    const depthClears = this.draw(plan);
+    const { depthClears, passes } = this.draw(plan);
 
     this.lastReport = {
       snapshot,
@@ -438,6 +466,7 @@ export class SolarSystemApp {
       originChanges: this.origin.originChanges,
       depthClears,
       simulatedSecondsApplied,
+      passes,
     };
     return this.lastReport;
   }
@@ -526,23 +555,57 @@ export class SolarSystemApp {
    *
    * @returns depth clears issued, so a test can compare against plan.clearDepthCount
    */
-  private draw(plan: DepthPlan): number {
+  private draw(plan: DepthPlan): {
+    readonly depthClears: number;
+    readonly passes: FramePassStats;
+  } {
+    const info = this.renderer.info;
+
+    /**
+     * Per-pass measurement needs manual control of the counters.
+     *
+     * With autoReset enabled three.js zeroes info.render at the start of every render
+     * call, so reading it after the frame would report only the LAST pass. The previous
+     * value is restored afterwards rather than assumed, so this does not quietly change
+     * renderer behaviour for anything else.
+     */
+    const previousAutoReset = info.autoReset;
+    info.autoReset = false;
+
+    const measure = (pass: () => void): PassStats => {
+      info.reset();
+      pass();
+      return { calls: info.render.calls, triangles: info.render.triangles };
+    };
+
     this.renderer.clear(true, true, true);
 
-    this.starfield.render(this.renderer);
-    this.orbits.render(this.renderer);
+    const starfield = measure(() => this.starfield.render(this.renderer));
+    const orbits = measure(() => this.orbits.render(this.renderer));
 
+    const slabs = new Map<SlabId, PassStats>();
+
+    // Ordering and the depth clears stay inside LayeredCameras, which owns the
+    // compositing contract and asserts autoClear is disabled. Measuring inside the
+    // callback keeps that guard rather than reimplementing the loop here.
     // clearFirst is false because the single clear above already happened; a second full
-    // clear here would discard the star field and the orbits.
-    return this.cameras.renderFrame(
+    // clear would discard the star field and the orbits.
+    const depthClears = this.cameras.renderFrame(
       this.renderer,
       plan,
       (slab) => {
-        // Each slab camera renders only its own layer, so one scene serves all passes.
-        this.renderer.render(this.scene, slab.camera);
+        // Each slab camera is pinned to its own layer, so one scene serves every pass.
+        slabs.set(
+          slab.id,
+          measure(() => this.renderer.render(this.scene, slab.camera)),
+        );
       },
       { clearFirst: false },
     );
+
+    info.autoReset = previousAutoReset;
+
+    return { depthClears, passes: { starfield, orbits, slabs } };
   }
 }
 

@@ -25,6 +25,12 @@ import {
   verifyCameraConsistency,
 } from '@/render/layered-cameras';
 import {
+  ORBIT_LAYER,
+  SLAB_LAYERS,
+  STARFIELD_LAYER,
+  UNASSIGNED_LAYER,
+} from '@/render/layers';
+import {
   RENDER_ORDER,
   type DepthCandidate,
   planDepthSlabs,
@@ -296,6 +302,106 @@ describe('the shared projection centre', () => {
   it('nominates one camera for projection so callers cannot disagree', () => {
     const cameras = new LayeredCameras();
     expect(cameras.projectionCamera).toBe(cameras.cameraFor('NEAR'));
+  });
+});
+
+describe('slab camera layer masks', () => {
+  /**
+   * REGRESSION GUARD FOR A TOTAL RENDERING FAILURE.
+   *
+   * An earlier revision created the three slab cameras without assigning layer masks, so
+   * each kept the constructor default of layer 0 only. three.js decides submission in
+   * WebGLRenderer.projectObject with
+   *
+   *   if ( object.layers.test( camera.layers ) )
+   *
+   * and Layers.test is a mask intersection. A default camera has mask 1, a planet mesh
+   * assigned to the near slab has mask 2, and 1 & 2 is 0, so NOT ONE MESH was ever
+   * submitted. All three slab passes rendered empty scenes and every planet was invisible.
+   *
+   * The failure was silent: no error, no warning, and the star field and orbit passes still
+   * drew correctly because those two did assign their camera layers. The viewport therefore
+   * showed stars and orbit lines with nothing on them, which looks like a body or scale
+   * defect rather than a camera defect.
+   *
+   * These assertions are the cheapest possible check for it.
+   */
+  it('pins each slab camera to its own slab layer', () => {
+    const cameras = new LayeredCameras();
+
+    for (const id of RENDER_ORDER) {
+      const camera = cameras.cameraFor(id);
+      expect(
+        camera.layers.isEnabled(SLAB_LAYERS[id]),
+        `${id} camera is not enabled for layer ${SLAB_LAYERS[id]}, so it would draw nothing`,
+      ).toBe(true);
+    }
+  });
+
+  it('leaves layer 0 disabled on every slab camera', () => {
+    // Layer 0 is reserved as the unassigned default. A slab camera that still included it
+    // would draw any object whose own layer assignment had been forgotten, in all three
+    // passes, which is exactly the bug UNASSIGNED_LAYER exists to expose rather than hide.
+    const cameras = new LayeredCameras();
+
+    for (const id of RENDER_ORDER) {
+      expect(
+        cameras.cameraFor(id).layers.isEnabled(UNASSIGNED_LAYER),
+        `${id} camera still includes the unassigned layer`,
+      ).toBe(false);
+    }
+  });
+
+  it('gives each slab camera a mask that excludes every other pass', () => {
+    // A camera drawing another pass's objects would use the wrong frustum and the wrong
+    // depth state for them.
+    const cameras = new LayeredCameras();
+
+    for (const id of RENDER_ORDER) {
+      const camera = cameras.cameraFor(id);
+
+      for (const otherId of RENDER_ORDER) {
+        if (otherId === id) continue;
+        expect(
+          camera.layers.isEnabled(SLAB_LAYERS[otherId]),
+          `${id} camera would also draw ${otherId} geometry`,
+        ).toBe(false);
+      }
+
+      expect(
+        camera.layers.isEnabled(STARFIELD_LAYER),
+        `${id} camera would also draw the star field`,
+      ).toBe(false);
+      expect(
+        camera.layers.isEnabled(ORBIT_LAYER),
+        `${id} camera would also draw orbit paths`,
+      ).toBe(false);
+    }
+  });
+
+  it('matches each camera mask to exactly one bit', () => {
+    // `set` rather than `enable`, so the mask is a single bit. A mask with several bits
+    // would mean the camera had accumulated layers rather than been pinned to one.
+    const cameras = new LayeredCameras();
+
+    for (const id of RENDER_ORDER) {
+      const mask = cameras.cameraFor(id).layers.mask;
+      expect(mask, `${id} camera mask`).toBe(1 << SLAB_LAYERS[id]);
+      // A single set bit: subtracting one clears it and shares no bits with the original.
+      expect(mask & (mask - 1), `${id} camera mask has more than one bit set`).toBe(0);
+    }
+  });
+
+  it('survives a shared-state update, which must not touch layer masks', () => {
+    // setShared rewrites projection and orientation every frame, so it must not reset the
+    // masks as a side effect.
+    const cameras = new LayeredCameras();
+    cameras.setShared({ fovDeg: 60, aspect: 2, position: new Vector3(1e5, 0, 0) });
+    cameras.applyPlan(planDepthSlabs(threeSlabScene()));
+
+    for (const id of RENDER_ORDER) {
+      expect(cameras.cameraFor(id).layers.mask, `${id} after update`).toBe(1 << SLAB_LAYERS[id]);
+    }
   });
 });
 

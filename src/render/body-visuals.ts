@@ -58,22 +58,18 @@ import type { DepthPlan, SlabId } from './depth-slabs';
 import { RENDER_ORDER } from './depth-slabs';
 import type { RenderOrigin } from './floating-origin';
 import { apparentRadiusPixels } from './layered-cameras';
+import { SLAB_LAYERS, STARFIELD_LAYER, UNASSIGNED_LAYER } from './layers';
 
 /**
- * Render layer for each slab.
+ * Layer constants come from ./layers and are re-exported for existing importers.
  *
- * Layer 0 is left unused. three.js puts every object on layer 0 by default, so
- * reserving it means an object that was never assigned a slab does not silently
- * appear in whichever camera happens to include layer 0.
+ * They live there so that both the objects being drawn and the cameras drawing them can
+ * depend on ONE definition. An earlier revision defined them in this module, which meant
+ * layered-cameras.ts could not import them without creating a cycle, so the slab cameras
+ * were left on the default layer and every planet became invisible. Two independent copies
+ * of these numbers could drift apart and resurrect exactly that bug.
  */
-export const SLAB_LAYERS: Readonly<Record<SlabId, number>> = {
-  NEAR: 1,
-  MIDDLE: 2,
-  FAR: 3,
-};
-
-/** Layer for the star field, which renders in its own pass. */
-export const STARFIELD_LAYER = 4;
+export { SLAB_LAYERS, STARFIELD_LAYER, UNASSIGNED_LAYER };
 
 /**
  * Projected DIAMETER below which a body is drawn as a marker instead of geometry.

@@ -119,6 +119,73 @@ function renderStressScene(instance: SolarSystemApp): FrameReport {
   return instance.renderFrame(0);
 }
 
+/**
+ * Rotates the camera onto the lit hemisphere of a body it is orbiting.
+ *
+ * NECESSARY FOR ANY ASSERTION ABOUT PIXELS, and its absence caused three test failures.
+ *
+ * The stress scene puts the camera at the rig's dolly minimum, where Earth's apparent
+ * radius is 568 px against a screen half-diagonal of 400 px. Earth therefore covers EVERY
+ * pixel of the viewport, occluding the star field entirely. If the camera is also on the
+ * unlit hemisphere the frame is legitimately, entirely black: measured, zero pixels above
+ * the coverage threshold, with no GL error and with both slab passes still reporting 3968
+ * triangles each.
+ *
+ * That is correct rendering, not a defect. A body seen from its night side IS dark, and the
+ * only way to make those frames bright would be to break the illumination model. So any
+ * test that reads pixels must first place the camera where there is something lit to see.
+ *
+ * The sunward azimuth is derived from the actual Sun and body positions, and the current
+ * azimuth is recovered from the actual camera offset rather than assumed to be the rig's
+ * default, so the rotation is correct regardless of what the camera was doing beforehand.
+ */
+function orbitToLitSide(instance: SolarSystemApp, bodyId: string): FrameReport {
+  const before = instance.report ?? instance.renderFrame(0);
+
+  const body = before.scaled.find((entry) => entry.bodyId === bodyId);
+  const sun = before.scaled.find((entry) => entry.bodyId === 'sun');
+  if (body === undefined || sun === undefined) return before;
+
+  const currentAzimuth = Math.atan2(
+    before.cameraRenderPosition.y - body.renderPosition.y,
+    before.cameraRenderPosition.x - body.renderPosition.x,
+  );
+  const sunwardAzimuth = Math.atan2(
+    sun.renderPosition.y - body.renderPosition.y,
+    sun.renderPosition.x - body.renderPosition.x,
+  );
+
+  // Elevation is also lowered towards the ecliptic, where the lit hemisphere is widest.
+  // orbitBy keeps the tracked target, unlike panBy, so follow mode survives this.
+  instance.cameraRig.orbitBy(sunwardAzimuth - currentAzimuth, -0.25);
+  return instance.renderFrame(0);
+}
+
+/**
+ * How closely the camera faces the Sun from a body, as a cosine.
+ *
+ * Positive means the lit hemisphere. Asserted after orbitToLitSide so a future change
+ * cannot silently reintroduce a night-side frame and leave a pixel assertion passing for
+ * the wrong reason.
+ */
+function litSideAlignment(report: FrameReport, bodyId: string): number {
+  const body = report.scaled.find((entry) => entry.bodyId === bodyId)!;
+  const sun = report.scaled.find((entry) => entry.bodyId === 'sun')!;
+
+  const toCamera = {
+    x: report.cameraRenderPosition.x - body.renderPosition.x,
+    y: report.cameraRenderPosition.y - body.renderPosition.y,
+  };
+  const toSun = {
+    x: sun.renderPosition.x - body.renderPosition.x,
+    y: sun.renderPosition.y - body.renderPosition.y,
+  };
+
+  const cameraLength = Math.hypot(toCamera.x, toCamera.y);
+  const sunLength = Math.hypot(toSun.x, toSun.y);
+  return (toCamera.x * toSun.x + toCamera.y * toSun.y) / (cameraLength * sunLength);
+}
+
 /** The GL context, for error checks and readback. */
 function gl(): WebGL2RenderingContext {
   return app.glRenderer.getContext() as WebGL2RenderingContext;
@@ -539,38 +606,128 @@ describe('slab boundary crossing', () => {
 });
 
 describe('draw call sequencing', () => {
-  it('issues one pass per non-empty slab, plus the star field and orbit passes', () => {
+  /**
+   * WHY THESE ASSERTIONS ARE PER-PASS, AND WHY THE PREVIOUS FORM WAS WORTHLESS.
+   *
+   * An earlier version of this block summed draw calls across the WHOLE frame and compared
+   * the total against a floor of `2 + nonEmptySlabs`. That test passed while every planet
+   * was invisible, because the star field pass and the eight orbit-line passes cleared the
+   * floor on their own. Three slab passes submitting literally nothing went unnoticed.
+   *
+   * An aggregate cannot express the property that matters. "Every pass drew something" is a
+   * statement about each pass individually, so the frame report now carries per-pass counts
+   * and these assertions read them directly.
+   */
+  it('submits geometry from every non-empty slab pass', () => {
     /**
-     * STRUCTURAL RATHER THAN PIXEL-BASED. three.js reports draw calls per frame, so the
-     * pass structure can be asserted directly instead of inferred from what appeared on
-     * screen.
+     * THE ASSERTION THAT WOULD HAVE CAUGHT THE LAYER BUG.
      *
-     * A pass costs at least one call, so the total must be at least the pass count: star
-     * field, orbits, and one per occupied slab.
+     * With the slab cameras left on the default layer, three.js submitted no object to any
+     * of them, so each slab pass reported zero draw calls. This fails immediately in that
+     * situation and cannot be satisfied by any other pass.
      */
-    const info = app.glRenderer.info;
-    info.autoReset = false;
-    info.reset();
-
     const report = renderStressScene(app);
 
-    // renderStressScene renders three frames, so the counter holds their sum. What matters
-    // is that the count is consistent with multiple passes having run rather than one.
-    const minimumPassesPerFrame = 2 + report.plan.nonEmpty.length;
-    expect(info.render.calls).toBeGreaterThanOrEqual(minimumPassesPerFrame);
-    expect(info.render.triangles).toBeGreaterThan(0);
+    expect(report.plan.nonEmpty.length).toBeGreaterThan(0);
 
-    info.autoReset = true;
+    for (const slab of report.plan.nonEmpty) {
+      const stats = report.passes.slabs.get(slab.id);
+
+      expect(stats, `${slab.id} pass produced no statistics at all`).toBeDefined();
+      expect(
+        stats!.calls,
+        `${slab.id} holds ${slab.members.length} bodies (${slab.members.join(', ')}) but ` +
+          'submitted zero draw calls, so its camera is drawing nothing',
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('submits triangles from every slab that contains a body drawn as geometry', () => {
+    /**
+     * Draw calls alone are not quite sufficient: a slab containing only markers issues a
+     * call for the marker point cloud, which submits POINTS rather than triangles. So
+     * triangles are required only where a sphere is actually drawn.
+     *
+     * Measured in this scene: NEAR holds Earth at 3968 triangles, MIDDLE holds the Sun at
+     * 3968, and the remaining seven planets are markers.
+     */
+    const report = renderStressScene(app);
+
+    const geometryBodies = new Set(
+      report.bodies.filter((body) => !body.drawnAsMarker).map((body) => body.bodyId),
+    );
+    expect(geometryBodies.size, 'no body was drawn as geometry, so nothing to verify').toBeGreaterThan(
+      0,
+    );
+
+    for (const slab of report.plan.nonEmpty) {
+      const drawsGeometry = slab.members.some((memberId) => geometryBodies.has(memberId));
+      if (!drawsGeometry) continue;
+
+      const stats = report.passes.slabs.get(slab.id)!;
+      expect(
+        stats.triangles,
+        `${slab.id} contains geometry-drawn bodies but submitted zero triangles`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('does not let one pass stand in for another', () => {
+    /**
+     * The star field and the orbit paths must each submit their own work, and neither may
+     * be the reason a slab assertion passes. Recorded separately so a regression in one
+     * cannot be masked by another.
+     */
+    const report = renderStressScene(app);
+
+    expect(report.passes.starfield.calls, 'star field pass drew nothing').toBeGreaterThan(0);
+    expect(report.passes.orbits.calls, 'orbit pass drew nothing').toBeGreaterThan(0);
+
+    // And the slab passes are counted independently of both.
+    const slabCalls = [...report.passes.slabs.values()].reduce(
+      (total, stats) => total + stats.calls,
+      0,
+    );
+    expect(slabCalls, 'slab passes contributed no draw calls').toBeGreaterThan(0);
+  });
+
+  it('reports one pass per non-empty slab and none for an empty one', () => {
+    // Contract section 4.2 requires empty slabs to be skipped entirely, so they must not
+    // appear in the statistics at all.
+    const report = renderStressScene(app);
+
+    expect(report.passes.slabs.size).toBe(report.plan.nonEmpty.length);
+
+    for (const slab of report.plan.slabs) {
+      if (slab.empty) {
+        expect(
+          report.passes.slabs.has(slab.id),
+          `${slab.id} is empty but was still rendered`,
+        ).toBe(false);
+      }
+    }
   });
 
   it('draws something to the buffer', () => {
-    // Tier 3, and the weakest possible form of it: the frame is not blank. This is the
-    // check that would have caught the scene.background forceClear defect, where every
-    // pass but the last was wiped.
+    /**
+     * Tier 3, and the weakest possible form of it: the frame is not blank. This is the check
+     * that would have caught the scene.background forceClear defect, where every pass but
+     * the last was wiped.
+     *
+     * THE DAY-SIDE ROTATION IS REQUIRED. At the dolly minimum Earth's apparent radius is
+     * 568 px against a 400 px screen half-diagonal, so Earth occludes the star field
+     * completely. On the night side the frame is then legitimately, entirely black:
+     * measured zero lit pixels, with no GL error and both slab passes still submitting 3968
+     * triangles each. Without rotating to the lit hemisphere this assertion fails on
+     * correct rendering.
+     */
     renderStressScene(app);
-    const coverage = totalCoverage(readPixels());
+    const report = orbitToLitSide(app, 'earth');
+    expect(litSideAlignment(report, 'earth'), 'camera is not on the lit hemisphere').toBeGreaterThan(
+      0.5,
+    );
 
-    expect(coverage).toBeGreaterThan(100);
+    expect(totalCoverage(readPixels())).toBeGreaterThan(100);
   });
 });
 
@@ -639,9 +796,32 @@ describe('visual presence', () => {
     const earth = screenPositionOf(report, 'earth');
     expect(earth).not.toBeNull();
 
-    // The body is close, so its disc is large; sample generously around the centre.
-    const coverage = coverageInRegion(pixels, earth!.x, earth!.y, 80);
-    expect(coverage, 'close body is not visible at its projected position').toBeGreaterThan(500);
+    /**
+     * THRESHOLD DERIVED FROM THE ROI, NOT PICKED.
+     *
+     * An earlier version asserted `> 500`, which was a badly chosen number: measured, the
+     * star field alone contributes about 186 covered pixels to this region, so the
+     * assertion sat within a factor of three of what an EMPTY frame produces. It failed
+     * only because the camera happened to be on the night side; with the camera on the day
+     * side it would have passed whether or not any planet was drawn.
+     *
+     * The correct scale comes from the geometry. Earth's apparent radius at the dolly
+     * minimum is 568 px, so a lit Earth fills the entire region of interest, which is
+     * 161 by 161 or 25921 px. Requiring a quarter of that is 6480 px: unreachable by the
+     * star field by a factor of 35, unreachable by a 1.2 px orbit line, and comfortably
+     * met by a hemisphere that is mostly lit. The remaining margin covers the terminator,
+     * where the cosine falloff legitimately takes the surface below the coverage threshold.
+     */
+    const roiHalfSizePx = 80;
+    const roiAreaPx = (2 * roiHalfSizePx + 1) ** 2;
+    const requiredCoverage = roiAreaPx * 0.25;
+
+    const coverage = coverageInRegion(pixels, earth!.x, earth!.y, roiHalfSizePx);
+    expect(
+      coverage,
+      `close body covered ${coverage} of ${roiAreaPx} px in its own region; the star field ` +
+        'alone contributes about 186, so this is consistent with no planet being drawn',
+    ).toBeGreaterThan(requiredCoverage);
   });
 
   it('keeps Neptune detectable in the same frame', () => {
@@ -807,12 +987,23 @@ describe('floating-origin stability in GL', () => {
   });
 
   it('keeps a body in the same screen region after the origin moves', () => {
-    // The coarser form of the same property, asserted against the rendered buffer rather
-    // than the projection: whatever was drawn at the body's position is still drawn there.
-    const report = renderStressScene(app);
+    /**
+     * The coarser form of the same property, asserted against the rendered buffer rather
+     * than the projection: whatever was drawn at the body's position is still drawn there.
+     *
+     * Rotated to the lit hemisphere first, because a night-side Earth covers the viewport
+     * and renders black, which would make both coverage counts zero and the ratio
+     * assertion meaningless. dollyBy preserves azimuth, so the excursion below stays lit.
+     */
+    renderStressScene(app);
+    const report = orbitToLitSide(app, 'earth');
+    expect(litSideAlignment(report, 'earth')).toBeGreaterThan(0.5);
+
     const before = screenPositionOf(report, 'earth');
     expect(before).not.toBeNull();
     const coverageBefore = coverageInRegion(readPixels(), before!.x, before!.y, 40);
+    // Not vacuous: there must be something drawn to compare against.
+    expect(coverageBefore).toBeGreaterThan(100);
 
     // Move far away and come back, forcing origin changes in between.
     const distance = app.cameraRig.distance;
@@ -850,14 +1041,27 @@ describe('both scale modes pass the gate', () => {
     canvas.remove();
     app = createApp('VISUALIZED');
 
-    const report = renderStressScene(app);
+    const stressReport = renderStressScene(app);
     const verification = app.verifyPlan()!;
 
     expect(verification.complete, verification.problems.join('; ')).toBe(true);
     expect(verification.disjoint, verification.problems.join('; ')).toBe(true);
     expect(verification.contained, verification.problems.join('; ')).toBe(true);
 
-    expect(report.depthClears).toBe(report.plan.clearDepthCount);
+    expect(stressReport.depthClears).toBe(stressReport.plan.clearDepthCount);
+
+    // Every non-empty slab must actually submit work, which is the per-pass check the
+    // aggregate draw-call assertion used to miss entirely.
+    for (const slab of stressReport.plan.nonEmpty) {
+      expect(
+        stressReport.passes.slabs.get(slab.id)?.calls ?? 0,
+        `${slab.id} submitted no draw calls in visualized scale`,
+      ).toBeGreaterThan(0);
+    }
+
+    // Rotated to the lit hemisphere before reading pixels; see orbitToLitSide.
+    const litReport = orbitToLitSide(app, 'earth');
+    expect(litSideAlignment(litReport, 'earth')).toBeGreaterThan(0.5);
     expect(totalCoverage(readPixels())).toBeGreaterThan(100);
 
     const context = gl();

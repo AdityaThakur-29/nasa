@@ -48,7 +48,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import type { SharedCameraState } from './layered-cameras';
-import { STARFIELD_LAYER } from './body-visuals';
+import { STARFIELD_LAYER } from './layers';
 
 /**
  * Number of stars generated.

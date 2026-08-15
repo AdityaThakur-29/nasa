@@ -65,6 +65,7 @@ import {
   type SlabId,
   type SlabPlan,
 } from './depth-slabs';
+import { SLAB_LAYERS } from './layers';
 
 /** Camera state shared by all three slabs. */
 export interface SharedCameraState {
@@ -136,6 +137,31 @@ export class LayeredCameras {
       // Matrices are driven explicitly from the shared state each frame, so
       // three.js must not also update them from its own scene-graph traversal.
       camera.matrixAutoUpdate = false;
+
+      /**
+       * PINNED TO ITS OWN SLAB LAYER. Omitting this made every planet invisible.
+       *
+       * three.js decides whether to submit an object in WebGLRenderer.projectObject:
+       *
+       *   if ( object.layers.test( camera.layers ) )
+       *
+       * and Layers.test is a mask intersection, `(this.mask & layers.mask) !== 0`. A newly
+       * constructed camera has only layer 0 enabled, so its mask is 1, while a planet mesh
+       * assigned to the near slab has mask 2. Since 1 & 2 is 0, not one mesh was ever
+       * submitted and all three slab passes rendered an empty scene.
+       *
+       * The failure was silent in the worst way: no error, no warning, and the star field
+       * and orbit passes still drew correctly because those two DID set their camera
+       * layers. So the viewport showed stars and orbit lines with no planets on them, which
+       * looks like a body-visuals or a scale problem rather than a camera problem.
+       *
+       * `set` rather than `enable`, because a slab camera must draw ONLY its own slab. Using
+       * enable would leave layer 0 in the mask, and any object that had missed its own layer
+       * assignment would then be drawn by all three slab passes, which is precisely the
+       * class of bug UNASSIGNED_LAYER exists to expose.
+       */
+      camera.layers.set(SLAB_LAYERS[id]);
+
       this.cameras.set(id, camera);
     }
 
