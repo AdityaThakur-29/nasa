@@ -111,3 +111,52 @@ This document records significant architectural decisions, their reasoning, and 
 **Context:** Without provenance, a radius multiplier or depth-slab boundary could be mistaken for a physical measurement. Conversely, a physical constant without a source cannot be validated or updated when better values are published.
 
 **Consequence:** `src/data/sources.md` is the single point of truth. The `Measured` interface carries `value`, `uncertainty`, `unit`, and `source` together. The interface labels values as MODEL/COMPUTED, never as measured or exact.
+
+---
+
+## ADR-012: 3D Asset Loading, Bounding Normalization & Depth-Slab Propagation
+
+**Decision:** Load 3D GLTF/GLB models asynchronously with graceful fallback to analytical unit spheres, automatically normalize bounding boxes/LODs, dynamically scale material albedos for physical irradiance, and propagate layer masks recursively across the asset hierarchy.
+
+**Context:** 
+1. Real 3D assets (`public/models/*.glb`) vary in hierarchy structure, internal LODs, native scale, and ring meshes (e.g. Saturn, Uranus).
+2. Three.js does not automatically propagate `Object3D.layers` to child meshes during render passes. Without recursive propagation, child meshes remain on layer 0 and disappear during multi-pass depth-slab passes.
+3. Node.js headless unit tests have no DOM/network origin and cannot resolve relative URLs like `/models/earth.glb`.
+
+**Consequence:**
+- `loadModels()` runs only in browser environments (`typeof window !== 'undefined'`), preserving pure Node.js headless test execution.
+- Bounding-box detection centers offset pivots and scales the primary body to unit radius (radius = 1.0), ensuring IAU rotational oblateness and `scaledBody.visualRadius` apply precisely.
+- `setObjectLayers()` recursively sets layer masks on all child meshes, maintaining seamless integration with the multi-pass depth-slab system.
+- `applyIllumination()` traverses loaded materials and scales their base diffuse colors according to physical solar distance (Lambertian radiance).
+- Full backward compatibility and offline fallback: if any asset fails to load, the mathematical sphere remains visible and operational.
+
+---
+
+## ADR-013: GLTF PBR Specular-Glossiness Extension Parser & Texture Mapping
+
+**Decision:** Register a custom `KHR_materials_pbrSpecularGlossiness` parser extension on `GLTFLoader` to automatically extract embedded JPEG/PNG diffuse textures, glossiness factors, and alpha channels into standard Three.js `MeshStandardMaterial` instances.
+
+**Context:**
+1. Many standard planetary 3D assets (e.g. `earth.glb`, `jupiter.glb`, `mars.glb`, `saturn.glb`, etc.) encode high-resolution planetary texture maps in the `KHR_materials_pbrSpecularGlossiness` extension dictionary rather than `pbrMetallicRoughness`.
+2. Modern Three.js (0.185+) does not parse specular-glossiness materials by default, leaving materials blank without diffuse texture maps unless an extension parser is registered.
+
+**Consequence:**
+- Embedded 8K/4K planetary maps are decoded directly from GLB binary chunks and assigned to `material.map`.
+- Roughness is derived via `1.0 - glossinessFactor`, metalness is pinned to `0.0`, and ring geometries (`saturn.glb`, `uranus.glb`) are configured with `DoubleSide` and alpha transparency.
+- Multi-pass `AmbientLight` is enabled across all depth slabs so the unlit sides of planets remain visible against deep space.
+
+---
+
+## ADR-014: Screen-Space Planet Target Reticles, Name Badges & UI Decoupling
+
+**Decision:** Project celestial body positions to screen space via `LayeredCameras.projectionCamera`, render glowing target reticles and name badges as a decoupled HTML/SVG overlay layer (`#planet-overlay`), and wire user navigation through high-level app commands (`focus()`, `select()`, `overview()`).
+
+**Context:**
+1. At system overview scale (camera distance ~1.6×10⁶ units), planetary bodies subtend sub-pixel fractions and are visually indistinguishable from background stars without indicators.
+2. In-canvas 3D text billboards create z-sorting artifacts and depth contention across multi-pass depth slabs.
+3. DOM-based overlays provide crisp, pixel-perfect text rendering, accessibility, smooth CSS animations, and instant responsive layouts.
+
+**Consequence:**
+- `app.getProjectedBodies()` returns NDC-projected `(screenX, screenY)`, `inFront` camera culling, and `apparentRadiusPx`.
+- The overlay synchronizes with the frame loop via `requestAnimationFrame`. Reticles adaptively fade out when the camera orbits close to a body (`apparentRadiusPx > 100`), ensuring unobstructed views of 3D models.
+- Direct click-to-focus on reticles, name badges, and the top HUD bar provides effortless navigation across the entire solar system.

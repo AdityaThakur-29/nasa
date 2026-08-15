@@ -35,9 +35,12 @@
 
 import {
   AdditiveBlending,
+  AmbientLight,
+  Box3,
   BufferAttribute,
   BufferGeometry,
   Color,
+  Group,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -260,6 +263,7 @@ export class BodyVisuals {
   private readonly markerMaterial: ShaderMaterial;
 
   private readonly sunLight: PointLight;
+  private readonly ambientLight: AmbientLight;
   private lastFrame: BodyVisualState[] = [];
 
   constructor(
@@ -325,6 +329,12 @@ export class BodyVisuals {
     this.sunLight.layers.disableAll();
     for (const slabId of RENDER_ORDER) this.sunLight.layers.enable(SLAB_LAYERS[slabId]);
     scene.add(this.sunLight);
+
+    this.ambientLight = new AmbientLight(0xffffff, 0.45);
+    this.ambientLight.name = 'ambient-light';
+    this.ambientLight.layers.disableAll();
+    for (const slabId of RENDER_ORDER) this.ambientLight.layers.enable(SLAB_LAYERS[slabId]);
+    scene.add(this.ambientLight);
 
     this.loadModels(bodyIds);
   }
@@ -467,6 +477,7 @@ export class BodyVisuals {
     this.markerMaterial.dispose();
 
     this.scene.remove(this.sunLight);
+    this.scene.remove(this.ambientLight);
   }
 
   /** Creates one slab's marker cloud, permanently bound to that slab's layer. */
@@ -646,46 +657,180 @@ export class BodyVisuals {
     if (typeof window === 'undefined') return;
     const loader = new GLTFLoader();
 
+    // Register KHR_materials_pbrSpecularGlossiness extension parser so all embedded
+    // planet textures (Earth, Jupiter, Mars, Venus, Saturn, Moon, Mercury, Neptune) load
+    loader.register((parser) => {
+      return {
+        name: 'KHR_materials_pbrSpecularGlossiness',
+        getMaterialType: (materialIndex: number) => {
+          const materialDef = (parser as unknown as { json: { materials: Array<{ extensions?: Record<string, unknown> }> } }).json.materials[materialIndex];
+          if (!materialDef?.extensions?.KHR_materials_pbrSpecularGlossiness) return null;
+          return MeshStandardMaterial;
+        },
+        extendMaterialParams: (materialIndex: number, materialParams: Record<string, unknown>) => {
+          const materialDef = (parser as unknown as { json: { materials: Array<{ extensions?: { KHR_materials_pbrSpecularGlossiness?: { diffuseTexture?: unknown; diffuseFactor?: number[]; glossinessFactor?: number } } }> } }).json.materials[materialIndex];
+          const ext = materialDef?.extensions?.KHR_materials_pbrSpecularGlossiness;
+          if (!ext) return Promise.resolve();
+
+          const pending: Promise<unknown>[] = [];
+
+          if (ext.diffuseTexture !== undefined) {
+            pending.push(
+              (parser as unknown as { assignTexture: (params: Record<string, unknown>, mapName: string, textureDef: unknown) => Promise<unknown> }).assignTexture(
+                materialParams,
+                'map',
+                ext.diffuseTexture,
+              ),
+            );
+          }
+
+          if (ext.diffuseFactor !== undefined) {
+            materialParams.color = new Color().fromArray(ext.diffuseFactor);
+          }
+
+          materialParams.roughness = 1.0 - (ext.glossinessFactor ?? 0.2);
+          materialParams.metalness = 0.0;
+
+          return Promise.all(pending);
+        },
+      };
+    });
+
+    const candidateUrls: Record<string, string[]> = {
+      sun: ['/models/the_star_sun.glb', '/models/sun.glb'],
+      mercury: ['/models/mercury.glb'],
+      venus: ['/models/venus.glb'],
+      earth: ['/models/earth.glb'],
+      moon: ['/models/moon.glb'],
+      mars: ['/models/mars.glb'],
+      jupiter: ['/models/jupiter.glb'],
+      saturn: ['/models/saturn.glb'],
+      uranus: ['/models/uranus.glb'],
+      neptune: ['/models/neptune.glb'],
+      pluto: ['/models/pluto.glb'],
+    };
+
     for (const bodyId of bodyIds) {
-      const url = `/models/${bodyId}.glb`;
-      loader.load(
-        url,
-        (gltf) => {
-          const model = gltf.scene;
-          const placeholder = this.meshes.get(bodyId);
-          if (placeholder === undefined) return;
+      const urls = candidateUrls[bodyId] ?? [`/models/${bodyId}.glb`];
+      this.loadModelWithFallback(loader, bodyId, urls, 0);
+    }
+  }
 
-          this.scene.remove(placeholder);
+  private loadModelWithFallback(
+    loader: GLTFLoader,
+    bodyId: string,
+    urls: readonly string[],
+    index: number,
+  ): void {
+    if (index >= urls.length) return;
+    const url = urls[index]!;
 
-          model.name = `body:${bodyId}`;
-          model.layers.mask = placeholder.layers.mask;
-          model.visible = placeholder.visible;
-          model.matrixAutoUpdate = false;
+    loader.load(
+      url,
+      (gltf) => {
+        const model = gltf.scene;
+        const placeholder = this.meshes.get(bodyId);
+        if (placeholder === undefined) return;
 
-          model.traverse((child) => {
-            if (child instanceof Mesh) {
-              child.matrixAutoUpdate = false;
-              child.frustumCulled = false;
-              if (child.material) {
-                const materials = Array.isArray(child.material) ? child.material : [child.material];
-                for (const mat of materials) {
-                  if ('color' in mat && mat.color instanceof Color) {
-                    this.gltfOriginalColors.set(mat, mat.color.clone());
-                  }
+        // If the model has multiple LOD nodes (such as the Sun LODs), hide LOD1-LOD4
+        model.traverse((child) => {
+          if (/lod[1-9]/i.test(child.name)) {
+            child.visible = false;
+          }
+        });
+
+        // Identify the primary planetary sphere / star sphere
+        let primaryTarget: Object3D = model;
+        model.traverse((child) => {
+          if (
+            child instanceof Mesh &&
+            (child.name.toLowerCase().includes('sphere') ||
+              child.name.toLowerCase().includes('sun_lod0'))
+          ) {
+            primaryTarget = child;
+          }
+        });
+
+        // Compute bounding box of the primary mesh
+        const box = new Box3().setFromObject(primaryTarget);
+        const center = new Vector3();
+        const size = new Vector3();
+        box.getCenter(center);
+        box.getSize(size);
+
+        // Native radius is half of the max dimension of the primary sphere
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const nativeRadius = maxDim > 0 ? maxDim / 2 : 1.0;
+        const scaleFactor = nativeRadius > 0 ? 1.0 / nativeRadius : 1.0;
+
+        // Wrap model in a container Group so applyTransform applies to container without overriding model.position / model.scale
+        const container = new Group();
+        container.name = `body:${bodyId}`;
+        container.matrixAutoUpdate = false;
+        container.visible = placeholder.visible;
+
+        // Center and normalize model geometry inside container
+        model.position.set(
+          -center.x * scaleFactor,
+          -center.y * scaleFactor,
+          -center.z * scaleFactor,
+        );
+        model.scale.setScalar(scaleFactor);
+        container.add(model);
+
+        // Configure child meshes
+        model.traverse((child) => {
+          if (child instanceof Mesh) {
+            child.frustumCulled = false;
+
+            if (bodyId === 'sun') {
+              // For the Sun: use MeshBasicMaterial with its high-res texture so it emits unlit, crystal-clear light
+              const oldMat = Array.isArray(child.material) ? child.material[0] : child.material;
+              const texture = oldMat?.map || oldMat?.emissiveMap;
+              if (texture) {
+                child.material = new MeshBasicMaterial({
+                  map: texture,
+                  color: 0xffffff,
+                });
+              } else {
+                child.material = new MeshBasicMaterial({
+                  color: 0xfff4ea,
+                });
+              }
+            } else if (child.material) {
+              const materials = Array.isArray(child.material) ? child.material : [child.material];
+              for (const mat of materials) {
+                if (
+                  child.name.toLowerCase().includes('ring') ||
+                  child.name.toLowerCase().includes('circle') ||
+                  (mat.name && mat.name.toLowerCase().includes('ring'))
+                ) {
+                  mat.side = 2; // DoubleSide
+                  mat.transparent = true;
+                }
+                if ('color' in mat && mat.color instanceof Color) {
+                  this.gltfOriginalColors.set(mat, mat.color.clone());
                 }
               }
             }
-          });
+          }
+        });
 
-          this.scene.add(model);
-          this.meshes.set(bodyId, model);
-        },
-        undefined,
-        (error) => {
+        this.setObjectLayers(container, placeholder.layers.mask);
+
+        this.scene.remove(placeholder);
+        this.scene.add(container);
+        this.meshes.set(bodyId, container);
+      },
+      undefined,
+      (error) => {
+        if (index + 1 < urls.length) {
+          this.loadModelWithFallback(loader, bodyId, urls, index + 1);
+        } else {
           console.warn(`[BodyVisuals] Failed to load 3D model for "${bodyId}" from ${url}:`, error);
         }
-      );
-    }
+      },
+    );
   }
 
   private setObjectLayers(object: Object3D, layer: number): void {

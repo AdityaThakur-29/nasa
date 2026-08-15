@@ -3,15 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-    <title>Solar System</title>
+    <title>Solar System — High-Fidelity 3D Interactive Visualization</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      /*
-       * Minimal shell only. The scientific data overlay is M3; this exists to give the
-       * canvas a full-viewport surface and to stop the browser's default touch gestures
-       * from fighting the camera.
-       */
       :root {
         color-scheme: dark;
+        --bg-color: #02030a;
+        --glass-bg: rgba(10, 16, 30, 0.75);
+        --glass-border: rgba(255, 255, 255, 0.12);
+        --glass-hover: rgba(255, 255, 255, 0.18);
+        --accent-blue: #4ea8de;
+        --accent-glow: rgba(78, 168, 222, 0.4);
+        --text-primary: #f0f4fc;
+        --text-secondary: #94a3b8;
+        --text-muted: #64748b;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       html,
@@ -20,21 +34,17 @@
         padding: 0;
         height: 100%;
         overflow: hidden;
-        background: #02030a;
+        background: var(--bg-color);
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        color: var(--text-primary);
+        user-select: none;
       }
 
       #viewport {
         display: block;
         width: 100vw;
         height: 100vh;
-        /*
-         * Without this the browser interprets drags as scroll and pinches as page zoom,
-         * so the camera would receive no touch input at all. Contract section 6 requires
-         * pinch to zoom and two-finger drag to pan.
-         */
         touch-action: none;
-        /* A drag that starts on the canvas must not select surrounding text. */
-        user-select: none;
         cursor: grab;
       }
 
@@ -42,30 +52,389 @@
         cursor: grabbing;
       }
 
-      /*
-       * Provenance strip. Not the M3 interface, just an always-visible statement of what
-       * the view is showing, so the scale distortion and the model behind the positions
-       * are never implicit. Contract sections 1.5, 9 and 11.
-       */
+      /* ---------------------------------------------------- Planet Overlay (Reticles & Labels) */
+      #planet-overlay {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 10;
+      }
+
+      .planet-target {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        pointer-events: auto;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transition: opacity 0.2s ease, transform 0.1s ease;
+      }
+
+      .planet-target.hidden {
+        display: none !important;
+      }
+
+      .planet-reticle {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 1.5px dashed var(--planet-color, #4ea8de);
+        box-shadow: 0 0 10px var(--planet-glow, rgba(78, 168, 222, 0.5)),
+                    inset 0 0 6px var(--planet-glow, rgba(78, 168, 222, 0.3));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+      }
+
+      .planet-reticle::after {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--planet-color, #fff);
+        box-shadow: 0 0 8px var(--planet-color, #fff);
+      }
+
+      .planet-target:hover .planet-reticle,
+      .planet-target.selected .planet-reticle {
+        width: 34px;
+        height: 34px;
+        border-style: solid;
+        border-width: 2px;
+        box-shadow: 0 0 18px var(--planet-color, #4ea8de),
+                    inset 0 0 10px var(--planet-glow, rgba(78, 168, 222, 0.5));
+        animation: reticlePulse 2s infinite ease-in-out;
+      }
+
+      @keyframes reticlePulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.1); opacity: 0.85; }
+      }
+
+      .planet-label {
+        margin-top: 5px;
+        padding: 3px 8px;
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        backdrop-filter: blur(8px);
+        font-family: 'Outfit', sans-serif;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        color: var(--text-primary);
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        transition: all 0.2s ease;
+      }
+
+      .planet-target:hover .planet-label,
+      .planet-target.selected .planet-label {
+        background: rgba(20, 32, 56, 0.9);
+        border-color: var(--planet-color, #4ea8de);
+        color: #ffffff;
+        transform: translateY(2px) scale(1.05);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px var(--planet-glow, rgba(78, 168, 222, 0.4));
+      }
+
+      /* ---------------------------------------------------- Top Navigation Bar */
+      #top-bar {
+        position: fixed;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 28px;
+        backdrop-filter: blur(16px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        max-width: 95vw;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      #top-bar::-webkit-scrollbar {
+        display: none;
+      }
+
+      .nav-btn {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid transparent;
+        color: var(--text-secondary);
+        padding: 6px 11px;
+        border-radius: 18px;
+        font-family: 'Outfit', sans-serif;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+        transition: all 0.2s ease;
+      }
+
+      .nav-btn:hover {
+        background: var(--glass-hover);
+        color: var(--text-primary);
+        border-color: rgba(255, 255, 255, 0.2);
+        transform: translateY(-1px);
+      }
+
+      .nav-btn.active {
+        background: rgba(78, 168, 222, 0.2);
+        border-color: var(--accent-blue);
+        color: #ffffff;
+        box-shadow: 0 0 12px var(--accent-glow);
+      }
+
+      .nav-btn.overview-btn {
+        background: rgba(255, 209, 102, 0.12);
+        border-color: rgba(255, 209, 102, 0.3);
+        color: #ffd166;
+      }
+
+      .nav-btn.overview-btn:hover {
+        background: rgba(255, 209, 102, 0.25);
+        box-shadow: 0 0 14px rgba(255, 209, 102, 0.4);
+      }
+
+      /* ---------------------------------------------------- Bottom Simulation Controls */
+      #bottom-controls {
+        position: fixed;
+        bottom: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 24px;
+        backdrop-filter: blur(16px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      }
+
+      .control-btn {
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text-primary);
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .control-btn:hover {
+        background: var(--glass-hover);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: scale(1.08);
+      }
+
+      .control-btn.active {
+        background: var(--accent-blue);
+        color: #02030a;
+        border-color: var(--accent-blue);
+      }
+
+      .divider {
+        width: 1px;
+        height: 20px;
+        background: var(--glass-border);
+      }
+
+      .rate-badge {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: var(--accent-blue);
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: rgba(78, 168, 222, 0.1);
+        border: 1px solid rgba(78, 168, 222, 0.2);
+        cursor: pointer;
+      }
+
+      .toggle-chip {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--glass-border);
+        color: var(--text-secondary);
+        padding: 5px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .toggle-chip:hover {
+        background: var(--glass-hover);
+        color: var(--text-primary);
+      }
+
+      .toggle-chip.active {
+        background: rgba(78, 168, 222, 0.2);
+        border-color: var(--accent-blue);
+        color: #fff;
+      }
+
+      /* ---------------------------------------------------- Planet Info Card */
+      #planet-card {
+        position: fixed;
+        top: 70px;
+        right: 18px;
+        width: 280px;
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        backdrop-filter: blur(20px);
+        padding: 16px;
+        z-index: 25;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        display: none;
+        flex-direction: column;
+        gap: 12px;
+        animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      @keyframes slideIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .card-title-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .card-icon {
+        font-size: 22px;
+      }
+
+      .card-title {
+        font-family: 'Outfit', sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        color: #ffffff;
+        margin: 0;
+      }
+
+      .card-subtitle {
+        font-size: 11px;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .close-card-btn {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 16px;
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+      }
+
+      .close-card-btn:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .card-stats {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: rgba(0, 0, 0, 0.25);
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .stat-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+      }
+
+      .stat-label {
+        color: var(--text-muted);
+      }
+
+      .stat-value {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+
+      .card-focus-btn {
+        width: 100%;
+        padding: 8px 12px;
+        background: linear-gradient(135deg, #3a86ff, #0077b6);
+        border: none;
+        border-radius: 10px;
+        color: #ffffff;
+        font-family: 'Outfit', sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 14px rgba(0, 119, 182, 0.4);
+      }
+
+      .card-focus-btn:hover {
+        background: linear-gradient(135deg, #4ea8de, #0096c7);
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(0, 119, 182, 0.6);
+      }
+
+      /* ---------------------------------------------------- Provenance Strip */
       #provenance {
         position: fixed;
         left: 0;
         bottom: 0;
         margin: 0;
         padding: 8px 12px;
-        font:
-          11px/1.5 ui-monospace,
-          "SF Mono",
-          Menlo,
-          Consolas,
-          monospace;
+        font: 11px/1.5 'JetBrains Mono', ui-monospace, monospace;
         letter-spacing: 0.04em;
-        /* 4.5:1 minimum against the background, per contract section 28. */
-        color: #c8d2e0;
+        color: #94a3b8;
         background: rgba(4, 8, 18, 0.72);
-        border-top-right-radius: 2px;
+        border-top-right-radius: 6px;
         pointer-events: none;
         white-space: pre-line;
+        z-index: 15;
       }
 
       #failure {
@@ -74,21 +443,90 @@
         display: none;
         place-content: center;
         padding: 2rem;
-        font:
-          13px/1.6 ui-monospace,
-          Menlo,
-          Consolas,
-          monospace;
+        font: 13px/1.6 'JetBrains Mono', monospace;
         color: #f0d4d4;
         background: #0a0406;
         white-space: pre-wrap;
+        z-index: 100;
       }
     </style>
   </head>
   <body>
     <canvas id="viewport" aria-label="Solar System visualization"></canvas>
+
+    <!-- Interactive 3D Planet Circles & Labels Overlay -->
+    <div id="planet-overlay"></div>
+
+    <!-- Top Quick-Selector Navigation Bar -->
+    <nav id="top-bar">
+      <button class="nav-btn overview-btn" data-body="overview" title="Full System Overview">
+        <span>🪐</span> Overview
+      </button>
+      <div class="divider"></div>
+      <button class="nav-btn" data-body="sun"><span>☀️</span> Sun</button>
+      <button class="nav-btn" data-body="mercury"><span>☿</span> Mercury</button>
+      <button class="nav-btn" data-body="venus"><span>♀</span> Venus</button>
+      <button class="nav-btn" data-body="earth"><span>⊕</span> Earth</button>
+      <button class="nav-btn" data-body="moon"><span>🌙</span> Moon</button>
+      <button class="nav-btn" data-body="mars"><span>♂</span> Mars</button>
+      <button class="nav-btn" data-body="jupiter"><span>♃</span> Jupiter</button>
+      <button class="nav-btn" data-body="saturn"><span>♄</span> Saturn</button>
+      <button class="nav-btn" data-body="uranus"><span>⛢</span> Uranus</button>
+      <button class="nav-btn" data-body="neptune"><span>♆</span> Neptune</button>
+      <button class="nav-btn" data-body="pluto"><span>♇</span> Pluto</button>
+    </nav>
+
+    <!-- Planet Detail Info Card -->
+    <aside id="planet-card">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="card-icon" id="card-icon">🌍</span>
+          <div>
+            <h3 class="card-title" id="card-title">Earth</h3>
+            <div class="card-subtitle" id="card-subtitle">Terrestrial Planet</div>
+          </div>
+        </div>
+        <button class="close-card-btn" id="close-card-btn" title="Close">✕</button>
+      </div>
+      <div class="card-stats">
+        <div class="stat-row">
+          <span class="stat-label">Sun Distance:</span>
+          <span class="stat-value" id="card-dist">149.6M km (1.00 AU)</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Equatorial Radius:</span>
+          <span class="stat-value" id="card-radius">6,378 km</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Orbital Speed:</span>
+          <span class="stat-value" id="card-speed">29.78 km/s</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Status:</span>
+          <span class="stat-value" id="card-status" style="color: #4ade80;">COMPUTED</span>
+        </div>
+      </div>
+      <button class="card-focus-btn" id="card-focus-btn">
+        <span>🚀</span> Fly & Focus
+      </button>
+    </aside>
+
+    <!-- Bottom Simulation Toolbar -->
+    <div id="bottom-controls">
+      <button class="control-btn" id="btn-reverse" title="Reverse Direction">⏪</button>
+      <button class="control-btn active" id="btn-play-pause" title="Play/Pause Simulation">⏸️</button>
+      <button class="control-btn" id="btn-forward" title="Forward Direction">⏩</button>
+      <div class="divider"></div>
+      <span class="rate-badge" id="rate-badge" title="Click to cycle speed">1x Speed</span>
+      <div class="divider"></div>
+      <button class="toggle-chip active" id="btn-toggle-labels">🏷️ Labels</button>
+      <button class="toggle-chip active" id="btn-toggle-rings">⭕ Rings</button>
+      <button class="toggle-chip" id="btn-scale-mode">🔭 Scale: Visual</button>
+    </div>
+
     <pre id="provenance" aria-live="polite"></pre>
     <pre id="failure" role="alert"></pre>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

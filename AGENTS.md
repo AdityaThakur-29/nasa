@@ -110,6 +110,7 @@ SimulationState → scaleSystem → CameraRig → FloatingOrigin → planDepthSl
 ### Layer Isolation
 - Layer 0 is **deliberately unused** (Three.js default). Objects without a layer assignment are drawn by no pass.
 - Each pass has a camera pinned to exactly one layer. Both the camera and the objects must have matching layers.
+- For hierarchical 3D GLTF models, layer masks must be propagated recursively to all child meshes (`setObjectLayers`), or they will remain on layer 0 and disappear.
 
 ### Scene Background
 - `scene.background` must be **null**. Setting it to a Color triggers `forceClear` inside Three.js, which would wipe every pass but the last.
@@ -152,3 +153,5 @@ SimulationState → scaleSystem → CameraRig → FloatingOrigin → planDepthSl
 5. **Using a single wide frustum**: 10¹⁰ dynamic range cannot be resolved. Use the slab system.
 6. **Testing conservation laws against secular elements**: They drift by design. Test the fixed-element propagator in `kepler.ts` instead.
 7. **Forgetting to set layer masks on both the camera AND the objects**: Results in an invisible pass with no error or warning.
+8. **Overwriting 3D model transforms directly without a Group container**: Overwrites internal model normalization and center offsets. Always wrap GLTF models in a `Group` container and apply frame transforms (`applyTransform`) to the container.
+9. **Ignoring KHR_materials_pbrSpecularGlossiness in GLTFLoader**: Leaves GLB models without diffuse textures. Register the extension parser on `GLTFLoader`.

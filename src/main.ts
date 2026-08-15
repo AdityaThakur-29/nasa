@@ -1,90 +1,59 @@
 /**
- * Entry point and input wiring.
+ * Entry point, UI wiring, and interactive celestial overlay.
  *
  * WHAT THIS LAYER OWNS. The DOM: canvas lookup, resize observation, pointer and keyboard
- * events, the media query for reduced motion, and the provenance strip. It translates
- * browser events into app commands and nothing else.
- *
- * WHY THE DOM LIVES ONLY HERE. The render layer must not read matchMedia, measure
- * elements, or attach listeners, because none of that is testable in node and all of it
- * would make the render modules depend on a browser. CameraRig takes `reducedMotion` as a
- * constructor option for exactly this reason: the query is evaluated here and injected.
- *
- * EVERY THRESHOLD IN THIS FILE IS IN CSS PIXELS. Pointer events report CSS pixels, and a
- * gesture threshold should be a consistent physical size rather than shrinking on a
- * high-density display. The device pixel ratio appears in precisely one place, sizing the
- * drawing buffer, and nowhere else.
+ * events, reduced motion media queries, interactive planet circles & labels, HUD navigation,
+ * playback controls, and the provenance strip. It translates user interactions into app
+ * commands and maintains UI state.
  */
 
 import { SolarSystemApp } from './app';
 
-/**
- * Cap on the drawing-buffer pixel ratio.
- *
- * Fragment cost scales with the SQUARE of this, so an uncapped 3x display costs nine
- * times the shading of a 1x one. Two is the point of diminishing returns for a scene
- * whose finest detail is a 1.2 pixel orbit line.
- */
+/** Cap on drawing-buffer pixel ratio to protect GPU fillrate. */
 const MAX_PIXEL_RATIO = 2;
 
-/**
- * Movement beyond which a pointer interaction is a drag rather than a click, CSS pixels.
- *
- * Without a threshold every drag would end in a selection, because a drag is a pointerdown
- * followed by a pointerup. Touch needs a larger value than mouse: a fingertip rolls by
- * several pixels during what the user intends as a stationary tap.
- */
 const MOUSE_DRAG_THRESHOLD_PX = 4;
 const TOUCH_DRAG_THRESHOLD_PX = 12;
 
-/**
- * Orbit sensitivity: radians of azimuth per viewport width dragged.
- *
- * Expressed per VIEWPORT rather than per pixel so the gesture feels identical in a small
- * window and a large one. Half a turn across the full width is controllable; a full turn
- * is too fast to aim.
- */
 const AZIMUTH_PER_VIEWPORT = Math.PI;
-
-/** Radians of elevation per viewport height dragged. */
 const ELEVATION_PER_VIEWPORT = Math.PI * 0.75;
-
-/**
- * Dolly rate, in inverse CSS pixels of wheel travel.
- *
- * Applied as exp(pixels * rate), which makes zoom MULTIPLICATIVE and exactly reversible:
- * scrolling down by n pixels and back up by n returns to the starting distance, because
- * exp(nk) * exp(-nk) is 1. A linear mapping would neither be reversible nor usable across
- * the seven orders of magnitude the camera spans.
- *
- * One Chrome wheel notch reports about 100 pixels, so this gives roughly 1.105x per notch.
- */
 const DOLLY_RATE_PER_PIXEL = 0.001;
-
-/**
- * Approximate line height for wheel events reported in lines, CSS pixels.
- *
- * NECESSARY FOR CROSS-BROWSER PARITY. WheelEvent.deltaMode is 0 for pixels, 1 for lines
- * and 2 for pages. Chrome reports pixels with deltaY near 100 per notch; Firefox has
- * historically reported LINES with deltaY near 3. Using deltaY unnormalised makes zoom
- * about thirty times slower in Firefox, which reads as the feature being broken rather
- * than as a sensitivity difference.
- */
 const WHEEL_LINE_HEIGHT_PX = 16;
 
-/** Keyboard step sizes. Deliberately coarse enough to be usable without a pointer. */
 const KEYBOARD_ORBIT_STEP = 0.06;
 const KEYBOARD_DOLLY_FACTOR = 1.15;
+
+const SPEED_STEPS = [1, 10, 100, 1000, 10000, 50000];
+
+interface PlanetMeta {
+  readonly icon: string;
+  readonly name: string;
+  readonly type: string;
+  readonly color: string;
+  readonly glow: string;
+}
+
+const PLANET_METADATA: Record<string, PlanetMeta> = {
+  sun: { icon: '☀️', name: 'Sun', type: 'Yellow Dwarf Star (G2V)', color: '#ffd166', glow: 'rgba(255, 209, 102, 0.7)' },
+  mercury: { icon: '☿', name: 'Mercury', type: 'Terrestrial Planet', color: '#adb5bd', glow: 'rgba(173, 181, 189, 0.5)' },
+  venus: { icon: '♀', name: 'Venus', type: 'Terrestrial Planet', color: '#f4a261', glow: 'rgba(244, 162, 97, 0.6)' },
+  earth: { icon: '⊕', name: 'Earth', type: 'Terrestrial Planet', color: '#4ea8de', glow: 'rgba(78, 168, 222, 0.7)' },
+  moon: { icon: '🌙', name: 'Moon', type: 'Natural Satellite (Luna)', color: '#e2eafc', glow: 'rgba(226, 234, 252, 0.5)' },
+  mars: { icon: '♂', name: 'Mars', type: 'Terrestrial Planet', color: '#e76f51', glow: 'rgba(231, 111, 81, 0.7)' },
+  jupiter: { icon: '♃', name: 'Jupiter', type: 'Gas Giant', color: '#e9c46a', glow: 'rgba(233, 196, 106, 0.7)' },
+  saturn: { icon: '♄', name: 'Saturn', type: 'Gas Giant (Ring System)', color: '#f4a261', glow: 'rgba(244, 162, 97, 0.7)' },
+  uranus: { icon: '⛢', name: 'Uranus', type: 'Ice Giant', color: '#48cae4', glow: 'rgba(72, 202, 228, 0.7)' },
+  neptune: { icon: '♆', name: 'Neptune', type: 'Ice Giant', color: '#0077b6', glow: 'rgba(0, 119, 182, 0.7)' },
+  pluto: { icon: '♇', name: 'Pluto', type: 'Dwarf Planet (Kuiper Belt)', color: '#b8bedd', glow: 'rgba(184, 190, 221, 0.5)' },
+};
 
 interface PointerRecord {
   readonly pointerId: number;
   readonly pointerType: string;
-  /** Position at pointerdown, for the click-versus-drag test. */
   readonly startX: number;
   readonly startY: number;
   currentX: number;
   currentY: number;
-  /** Total distance travelled, so a drag that returns to its origin still counts. */
   travelled: number;
 }
 
@@ -96,13 +65,6 @@ function requireElement<T extends Element>(selector: string): T {
   return element;
 }
 
-/**
- * Reports a fatal failure to the user rather than leaving a black canvas.
- *
- * WebGL context creation genuinely fails on some machines: no GPU, a blocklisted driver,
- * or a browser with hardware acceleration disabled. A blank viewport gives the user
- * nothing to act on.
- */
 function reportFatal(message: string, detail?: unknown): void {
   const element = document.querySelector<HTMLElement>('#failure');
   const text =
@@ -113,11 +75,9 @@ function reportFatal(message: string, detail?: unknown): void {
         : `${message}\n\n${String(detail)}`;
 
   if (element === null) {
-    // Nothing to render into, so the console is the only channel left.
     console.error(text);
     return;
   }
-
   element.textContent = text;
   element.style.display = 'grid';
 }
@@ -125,22 +85,28 @@ function reportFatal(message: string, detail?: unknown): void {
 function main(): void {
   const canvas = requireElement<HTMLCanvasElement>('#viewport');
   const provenance = requireElement<HTMLElement>('#provenance');
+  const planetOverlay = requireElement<HTMLElement>('#planet-overlay');
+  const topBar = requireElement<HTMLElement>('#top-bar');
+  const planetCard = requireElement<HTMLElement>('#planet-card');
 
-  /**
-   * The canvas must be focusable to receive keyboard events.
-   *
-   * Set here rather than in the markup so the reason sits beside the keyboard handler.
-   * Without a tabindex the canvas is not in the tab order and every keyboard control
-   * below would be unreachable, which contract section 28 does not allow.
-   */
+  const cardIcon = requireElement<HTMLElement>('#card-icon');
+  const cardTitle = requireElement<HTMLElement>('#card-title');
+  const cardSubtitle = requireElement<HTMLElement>('#card-subtitle');
+  const cardDist = requireElement<HTMLElement>('#card-dist');
+  const cardRadius = requireElement<HTMLElement>('#card-radius');
+  const cardSpeed = requireElement<HTMLElement>('#card-speed');
+  const cardFocusBtn = requireElement<HTMLButtonElement>('#card-focus-btn');
+  const closeCardBtn = requireElement<HTMLButtonElement>('#close-card-btn');
+
+  const btnPlayPause = requireElement<HTMLButtonElement>('#btn-play-pause');
+  const btnReverse = requireElement<HTMLButtonElement>('#btn-reverse');
+  const btnForward = requireElement<HTMLButtonElement>('#btn-forward');
+  const rateBadge = requireElement<HTMLElement>('#rate-badge');
+  const btnToggleLabels = requireElement<HTMLButtonElement>('#btn-toggle-labels');
+  const btnToggleRings = requireElement<HTMLButtonElement>('#btn-toggle-rings');
+  const btnScaleMode = requireElement<HTMLButtonElement>('#btn-scale-mode');
+
   canvas.tabIndex = 0;
-
-  /**
-   * Reduced motion, read ONCE here and injected.
-   *
-   * Contract section 28. The render layer never touches matchMedia, so the eased-transition
-   * path stays testable in node.
-   */
   const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   let app: SolarSystemApp;
@@ -160,35 +126,254 @@ function main(): void {
     return;
   }
 
-  // The query can change while the page is open, for instance if the user alters an
-  // operating-system setting, so the response is live rather than read only at startup.
   motionQuery.addEventListener('change', (event) => {
     app.setReducedMotion(event.matches);
   });
 
-  // ------------------------------------------------------------------- sizing
+  // UI toggle flags
+  let showLabels = true;
+  let showRings = true;
+  let currentSpeedIndex = 0;
+  let isVisualScale = true;
 
+  // ------------------------------------------------------------------- Overlay Targets Map
+  const targetElements = new Map<string, { root: HTMLElement; reticle: HTMLElement; label: HTMLElement }>();
+
+  function createOverlayElements(): void {
+    planetOverlay.innerHTML = '';
+    targetElements.clear();
+
+    for (const [bodyId, meta] of Object.entries(PLANET_METADATA)) {
+      const root = document.createElement('div');
+      root.className = 'planet-target';
+      root.id = `target-${bodyId}`;
+      root.style.setProperty('--planet-color', meta.color);
+      root.style.setProperty('--planet-glow', meta.glow);
+
+      const reticle = document.createElement('div');
+      reticle.className = 'planet-reticle';
+      reticle.title = `Click to focus ${meta.name}`;
+
+      const label = document.createElement('div');
+      label.className = 'planet-label';
+      label.innerHTML = `<span>${meta.icon}</span> <span>${meta.name}</span>`;
+
+      root.appendChild(reticle);
+      root.appendChild(label);
+
+      root.addEventListener('click', (e) => {
+        e.stopPropagation();
+        app.focus(bodyId);
+        updateUI();
+      });
+
+      planetOverlay.appendChild(root);
+      targetElements.set(bodyId, { root, reticle, label });
+    }
+  }
+
+  createOverlayElements();
+
+  // ------------------------------------------------------------------- Update Overlay
+  function updateOverlayPositions(): void {
+    const projected = app.getProjectedBodies();
+    const selectedId = app.selected;
+    const vpWidth = canvas.clientWidth;
+    const vpHeight = canvas.clientHeight;
+
+    for (const item of projected) {
+      const el = targetElements.get(item.bodyId);
+      if (!el) continue;
+
+      // Check if visible and in front of camera
+      const isVisible =
+        item.inFront &&
+        item.screenX >= -50 &&
+        item.screenX <= vpWidth + 50 &&
+        item.screenY >= -50 &&
+        item.screenY <= vpHeight + 50;
+
+      if (!isVisible) {
+        el.root.classList.add('hidden');
+        continue;
+      }
+
+      el.root.classList.remove('hidden');
+      el.root.style.left = `${item.screenX}px`;
+      el.root.style.top = `${item.screenY}px`;
+
+      // Active selection highlight
+      if (item.bodyId === selectedId) {
+        el.root.classList.add('selected');
+      } else {
+        el.root.classList.remove('selected');
+      }
+
+      // If user toggles off rings or if apparent size is large (zoomed very close), fade reticle
+      if (!showRings || item.apparentRadiusPx > 100) {
+        el.reticle.style.display = 'none';
+      } else {
+        el.reticle.style.display = 'flex';
+      }
+
+      // If user toggles off labels, hide label badge
+      if (!showLabels) {
+        el.label.style.display = 'none';
+      } else {
+        el.label.style.display = 'flex';
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------- Planet Card & Navigation
+  function updatePlanetCard(): void {
+    const selectedId = app.selected;
+    if (!selectedId) {
+      planetCard.style.display = 'none';
+      return;
+    }
+
+    const meta = PLANET_METADATA[selectedId];
+    if (!meta) {
+      planetCard.style.display = 'none';
+      return;
+    }
+
+    const report = app.report;
+    const bodyState = report?.snapshot.bodies.find((b) => b.bodyId === selectedId);
+    const scaledBody = report?.scaled.find((b) => b.bodyId === selectedId);
+
+    cardIcon.textContent = meta.icon;
+    cardTitle.textContent = meta.name;
+    cardSubtitle.textContent = meta.type;
+
+    if (bodyState) {
+      const distMillion = (bodyState.distanceFromSunKm / 1e6).toFixed(2);
+      const distAU = (bodyState.distanceFromSunKm / 149597870.7).toFixed(2);
+      cardDist.textContent = selectedId === 'sun' ? '0 km (Center)' : `${distMillion}M km (${distAU} AU)`;
+
+      const radiusKm = (scaledBody?.physicalRadiusKm ?? 0).toLocaleString();
+      cardRadius.textContent = `${radiusKm} km`;
+
+      const speedKmS = bodyState.velocityKmS
+        ? Math.hypot(
+            bodyState.velocityKmS.x,
+            bodyState.velocityKmS.y,
+            bodyState.velocityKmS.z,
+          ).toFixed(2)
+        : '0.00';
+      cardSpeed.textContent = selectedId === 'sun' ? '0 km/s' : `${speedKmS} km/s`;
+    }
+
+    planetCard.style.display = 'flex';
+  }
+
+  function updateNavActive(): void {
+    const selectedId = app.selected;
+    const navButtons = topBar.querySelectorAll<HTMLButtonElement>('.nav-btn');
+    navButtons.forEach((btn) => {
+      const body = btn.getAttribute('data-body');
+      if (body === selectedId || (body === 'overview' && selectedId === null)) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  function updateUI(): void {
+    updateProvenance();
+    updatePlanetCard();
+    updateNavActive();
+  }
+
+  // Top Bar Navigation clicks
+  topBar.addEventListener('click', (e) => {
+    const target = (e.target as HTMLElement).closest<HTMLButtonElement>('.nav-btn');
+    if (!target) return;
+    const body = target.getAttribute('data-body');
+    if (body === 'overview' || !body) {
+      app.overview();
+    } else {
+      app.focus(body);
+    }
+    updateUI();
+  });
+
+  // Card events
+  closeCardBtn.addEventListener('click', () => {
+    app.select(null);
+    updateUI();
+  });
+
+  cardFocusBtn.addEventListener('click', () => {
+    if (app.selected) {
+      app.focus(app.selected);
+      updateUI();
+    }
+  });
+
+  // ------------------------------------------------------------------- Simulation Controls
+  btnPlayPause.addEventListener('click', () => {
+    app.simulationClock.togglePaused();
+    btnPlayPause.textContent = app.simulationClock.paused ? '▶️' : '⏸️';
+    btnPlayPause.classList.toggle('active', !app.simulationClock.paused);
+    updateProvenance();
+  });
+
+  btnReverse.addEventListener('click', () => {
+    app.simulationClock.setDirection(-1);
+    btnReverse.classList.add('active');
+    btnForward.classList.remove('active');
+    updateProvenance();
+  });
+
+  btnForward.addEventListener('click', () => {
+    app.simulationClock.setDirection(1);
+    btnForward.classList.add('active');
+    btnReverse.classList.remove('active');
+    updateProvenance();
+  });
+
+  rateBadge.addEventListener('click', () => {
+    currentSpeedIndex = (currentSpeedIndex + 1) % SPEED_STEPS.length;
+    const rate = SPEED_STEPS[currentSpeedIndex]!;
+    app.simulationClock.setRate(rate);
+    rateBadge.textContent = `${rate.toLocaleString()}x Speed`;
+    updateProvenance();
+  });
+
+  btnToggleLabels.addEventListener('click', () => {
+    showLabels = !showLabels;
+    btnToggleLabels.classList.toggle('active', showLabels);
+  });
+
+  btnToggleRings.addEventListener('click', () => {
+    showRings = !showRings;
+    btnToggleRings.classList.toggle('active', showRings);
+  });
+
+  btnScaleMode.addEventListener('click', () => {
+    isVisualScale = !isVisualScale;
+    app.setScaleMode(isVisualScale ? 'VISUALIZED' : 'SCIENTIFIC');
+    btnScaleMode.textContent = isVisualScale ? '🔭 Scale: Visual' : '📐 Scale: Scientific';
+    btnScaleMode.classList.toggle('active', !isVisualScale);
+    updateProvenance();
+  });
+
+  // ------------------------------------------------------------------- sizing
   const applySize = (): void => {
     const rect = canvas.getBoundingClientRect();
-    // A zero-sized rect occurs before layout settles; sizing to it would produce a
-    // degenerate aspect ratio.
     if (rect.width <= 0 || rect.height <= 0) return;
-
     app.resize(rect.width, rect.height);
-    // Re-read the ratio each time: dragging a window between displays changes it.
     app.glRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
   };
 
-  // ResizeObserver rather than the window resize event, because the canvas can change
-  // size without the window doing so, and it fires once after layout rather than
-  // repeatedly during it.
   new ResizeObserver(applySize).observe(canvas);
   applySize();
 
   // ------------------------------------------------------------------ pointer
-
   const pointers = new Map<number, PointerRecord>();
-  /** Separation between two pointers on the previous move, for pinch. */
   let previousPinchDistance: number | null = null;
 
   const dragThresholdFor = (pointerType: string): number =>
@@ -202,8 +387,6 @@ function main(): void {
   };
 
   canvas.addEventListener('pointerdown', (event) => {
-    // Capture so a drag that leaves the canvas keeps delivering events; without this the
-    // camera stops mid-gesture when the pointer crosses the edge.
     canvas.setPointerCapture(event.pointerId);
     canvas.focus();
 
@@ -234,39 +417,23 @@ function main(): void {
 
     const rect = canvas.getBoundingClientRect();
 
-    // TWO POINTERS: pinch to zoom and two-finger drag to pan. Contract section 6.
     if (pointers.size >= 2) {
       const distance = pinchDistance();
       if (distance !== null && previousPinchDistance !== null && previousPinchDistance > 0) {
-        // The ratio of separations is directly the dolly factor, which keeps the gesture
-        // multiplicative without any tuning constant.
         const ratio = previousPinchDistance / distance;
         if (Number.isFinite(ratio) && ratio > 0) app.cameraRig.dollyBy(ratio);
       }
       previousPinchDistance = distance;
-
-      // Two-finger drag pans, using this pointer's own motion so the pan tracks the hand
-      // rather than the midpoint, which jumps when a finger lifts.
       app.cameraRig.panBy(deltaX / rect.width, -deltaY / rect.height);
       return;
     }
 
-    // MIDDLE BUTTON pans, matching the convention contract section 6 specifies for mouse
-    // input. event.buttons is a bitmask; bit 2 is the middle button.
     const middleHeld = (event.buttons & 4) !== 0;
     if (middleHeld) {
       app.cameraRig.panBy(deltaX / rect.width, -deltaY / rect.height);
       return;
     }
 
-    /**
-     * SINGLE POINTER DRAGS THE CAMERA.
-     *
-     * Dragging right rotates the camera anticlockwise about the target, so the scene
-     * appears to follow the hand. Dragging up raises the camera above the ecliptic. Both
-     * are conventions rather than derivations, and inverting either would be a defensible
-     * preference.
-     */
     app.cameraRig.orbitBy(
       (-deltaX / rect.width) * AZIMUTH_PER_VIEWPORT,
       (-deltaY / rect.height) * ELEVATION_PER_VIEWPORT,
@@ -281,69 +448,53 @@ function main(): void {
     if (pointers.size === 0) canvas.classList.remove('dragging');
 
     if (record === undefined) return;
-
-    // A gesture that moved beyond the threshold was a drag, so it must not also select.
     if (record.travelled > dragThresholdFor(record.pointerType)) return;
 
     const rect = canvas.getBoundingClientRect();
     const result = app.pick(
       event.clientX - rect.left,
       event.clientY - rect.top,
-      // Touch pointing is far coarser than mouse pointing, so it gets the larger
-      // tolerance. Passing undefined lets the selection module apply its own default.
       record.pointerType === 'touch' ? 32 : undefined,
     );
 
-    // A tap on empty space clears the selection, which is the same effect as Escape.
     app.select(result?.bodyId ?? null);
-    updateProvenance();
+    updateUI();
   };
 
   canvas.addEventListener('pointerup', finishPointer);
   canvas.addEventListener('pointercancel', (event) => {
-    // Cancelled, so no selection: the interaction did not complete.
     pointers.delete(event.pointerId);
     if (pointers.size < 2) previousPinchDistance = null;
     if (pointers.size === 0) canvas.classList.remove('dragging');
   });
 
   canvas.addEventListener('dblclick', (event) => {
-    // Contract section 6: double-click focuses, which selects and flies to the body.
     const rect = canvas.getBoundingClientRect();
     const result = app.pick(event.clientX - rect.left, event.clientY - rect.top);
     if (result?.bodyId != null) {
       app.focus(result.bodyId);
-      updateProvenance();
+      updateUI();
     }
   });
 
   canvas.addEventListener(
     'wheel',
     (event) => {
-      // Without preventDefault the browser zooms the page instead, and the camera receives
-      // nothing. Requires passive: false, which is why it is set explicitly below.
       event.preventDefault();
-
-      // Normalised to CSS pixels; see WHEEL_LINE_HEIGHT_PX for why this is not optional.
       let pixels = event.deltaY;
       if (event.deltaMode === 1) pixels *= WHEEL_LINE_HEIGHT_PX;
       else if (event.deltaMode === 2) pixels *= canvas.getBoundingClientRect().height;
 
-      // Exponential, so the gesture is multiplicative and exactly reversible.
       app.cameraRig.dollyBy(Math.exp(pixels * DOLLY_RATE_PER_PIXEL));
     },
-    // Chrome treats wheel listeners as passive by default in some contexts, and a passive
-    // listener cannot call preventDefault.
     { passive: false },
   );
 
-  // Middle-click autoscroll would otherwise hijack the pan gesture.
   canvas.addEventListener('auxclick', (event) => {
     if (event.button === 1) event.preventDefault();
   });
 
   // ----------------------------------------------------------------- keyboard
-
   canvas.addEventListener('keydown', (event) => {
     switch (event.key) {
       case 'ArrowLeft':
@@ -367,36 +518,26 @@ function main(): void {
         app.cameraRig.dollyBy(KEYBOARD_DOLLY_FACTOR);
         break;
       case 'Escape':
-        // Contract section 6: Escape clears the selection.
         app.select(null);
-        updateProvenance();
+        updateUI();
         break;
       case 'Home':
         app.overview();
-        updateProvenance();
+        updateUI();
         break;
       case ' ':
         app.simulationClock.togglePaused();
-        updateProvenance();
+        btnPlayPause.textContent = app.simulationClock.paused ? '▶️' : '⏸️';
+        btnPlayPause.classList.toggle('active', !app.simulationClock.paused);
+        updateUI();
         break;
       default:
-        // Not a control this view handles, so the browser keeps it.
         return;
     }
-    // Consumed, so arrow keys do not also scroll the page.
     event.preventDefault();
   });
 
   // --------------------------------------------------------------- provenance
-
-  /**
-   * Updates the always-visible statement of what the view is showing.
-   *
-   * NOT the M3 interface. This exists so the scale distortion and the model behind the
-   * positions are never implicit, which contract sections 1.5, 9 and 11 require whenever
-   * non-linear scaling is active. The vocabulary follows section 27: MODEL and COMPUTED,
-   * never telemetry or live.
-   */
   function updateProvenance(): void {
     const report = app.report;
     if (report === null) return;
@@ -420,8 +561,6 @@ function main(): void {
       }
     }
 
-    // Bodies with no model are disclosed rather than silently absent; in M1 that is the
-    // Moon, which awaits its lunar theory.
     if (report.snapshot.unavailable.length > 0) {
       const names = report.snapshot.unavailable.map((entry) => entry.bodyId.toUpperCase());
       lines.push(`NO MODEL LOADED  ${names.join(', ')}`);
@@ -431,19 +570,20 @@ function main(): void {
   }
 
   // --------------------------------------------------------------------- run
-
-  // One frame before starting the loop, so the provenance strip and the pick buffer are
-  // populated rather than empty until the first animation callback.
   app.renderFrame(0);
-  updateProvenance();
+  updateUI();
 
-  // Refresh the strip about four times a second rather than every frame: it is text, and
-  // rewriting it at 60 Hz would cost layout for no visible benefit.
+  // Continual overlay positions synchronization on animation frame
+  function overlayLoop(): void {
+    updateOverlayPositions();
+    requestAnimationFrame(overlayLoop);
+  }
+  requestAnimationFrame(overlayLoop);
+
   window.setInterval(updateProvenance, 250);
 
   app.start();
 
-  // Released so a hot reload or a navigation does not leak GPU resources.
   window.addEventListener('beforeunload', () => {
     app.dispose();
   });

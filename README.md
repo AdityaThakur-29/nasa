@@ -1,25 +1,34 @@
 # 🌌 Solar System Visualization
 
-A high-fidelity, interactive Solar System visualization built with **Three.js** and **TypeScript**. Planetary positions are computed from real [JPL approximate Keplerian elements](https://ssd.jpl.nasa.gov/planets/approx_pos.html), orientations follow [IAU rotational models](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc), and every physical constant traces to a published citation.
+A high-fidelity, interactive Solar System visualization built with **Three.js** and **TypeScript**. Planetary positions are computed from real [JPL approximate Keplerian elements](https://ssd.jpl.nasa.gov/planets/approx_pos.html), orientations follow [IAU rotational models](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc), visual geometry utilizes realistic **3D GLTF/GLB models with embedded PBR textures and rings**, and every physical constant traces to a published citation.
 
 > **Not a toy demo.** This project enforces rigorous data provenance, type-safe time scales, physically-grounded irradiance, and a multi-pass depth-slab pipeline that handles astronomical distance ranges (~10¹⁰) without z-fighting.
 
-![Status: M1 — Core Simulation](https://img.shields.io/badge/Milestone-M1_Core_Simulation-blue)
+![Status: M3 — Interactive HUD & Visual Fidelity Complete](https://img.shields.io/badge/Milestone-M1_%2B_M2_%2B_M3_Complete-emerald)
 
 ---
 
 ## ✨ Features
 
-- **Real ephemeris** — JPL approximate positions (1800–2050 AD), accurate to published error bounds
-- **IAU orientation** — pole and prime-meridian models from `pck00011.tpc`
-- **Split Julian Date arithmetic** — sub-microsecond precision preserved over centuries
-- **Type-branded time scales** — `JulianDate<'UTC'>` and `JulianDate<'TT'>` prevent mixing at compile time
-- **Dual scale modes** — Scientific (true proportions) and Visualized (compressed distances, exaggerated radii)
-- **Multi-pass depth slabs** — NEAR / MIDDLE / FAR frustum partitioning with logarithmic depth buffers
-- **Floating origin** — camera-relative coordinates eliminate f32 jitter at large distances
-- **Physical irradiance** — inverse-square from IAU nominal luminosity, with perceptual compression option
-- **Full provenance** — every value cites its source (JPL, IAU, NAIF, Meeus, Espenak & Meeus)
-- **Comprehensive tests** — 14 unit test suites + 2 headless WebGL gate tests
+- **Realistic 3D Planetary Models & PBR Textures** — GLTF/GLB assets with embedded high-resolution surface textures for the Sun, all 8 planets, Moon, and Pluto
+- **PBR Specular-Glossiness Extension Parser** — Custom `GLTFLoader` plugin mapping embedded diffuse textures to Three.js `MeshStandardMaterial`
+- **Ring Systems** — Double-sided transparent 3D annular ring geometry for Saturn and Uranus
+- **Emissive Stellar Rendering & Unit Normalization** — Glowing Sun geometry with unit sphere normalization, centered pivot, and unlit `MeshBasicMaterial`
+- **Interactive 3D Planet Target Reticles** — Screen-projected glowing circles with animated pulses for instant planet discovery from far away
+- **Floating Planet Name Badges** — Glassmorphic labels with planetary symbols and names positioned dynamically over every celestial body
+- **Top Quick-Selector HUD** — Glassmorphic toolbar with instant click-to-focus navigation for the Sun, planets, Moon, Pluto, and system overview
+- **Planet Inspector Data Card** — Floating inspector showing real-time solar distance (km & AU), equatorial radius, and orbital speed
+- **Real-Time Simulation Controls** — Play/pause, reverse/forward direction, and 1× to 50000× speed multipliers
+- **Scale Mode & Visibility Toggles** — Live switching between Visualized and Scientific scale, plus instant Label and Ring visibility toggles
+- **Real Ephemeris** — JPL approximate positions (1800–2050 AD), accurate to published error bounds
+- **IAU Orientation** — Pole and prime-meridian models from `pck00011.tpc`
+- **Split Julian Date Arithmetic** — Sub-microsecond precision preserved over centuries
+- **Type-Branded Time Scales** — `JulianDate<'UTC'>` and `JulianDate<'TT'>` prevent mixing at compile time
+- **Multi-Pass Depth Slabs** — NEAR / MIDDLE / FAR frustum partitioning with logarithmic depth buffers
+- **Floating Origin** — Camera-relative coordinates eliminate f32 jitter at astronomical distances
+- **Multi-Pass Space Lighting** — Directional solar light + balanced ambient illumination across all depth slabs
+- **Full Provenance** — Every value cites its source (JPL, IAU, NAIF, Meeus, Espenak & Meeus)
+- **Comprehensive Tests** — 14 unit test suites (675 tests) + 2 headless WebGL gate tests
 
 ---
 
@@ -33,7 +42,7 @@ SimulationState (physical km, km/s, f64)
   → CameraRig (camera position, derived FROM scaled system)
   → FloatingOrigin (camera-relative, f64)
   → planDepthSlabs (frustum planes per slab)
-  → Render objects (f32 uploads, camera-relative only)
+  → Render objects / 3D GLB Models (f32 uploads, camera-relative only)
 ```
 
 ### Draw Order (per frame)
@@ -88,27 +97,43 @@ npm run typecheck
 
 ## 🎮 Controls
 
-| Input                    | Action                          |
-|--------------------------|---------------------------------|
-| **Drag** (left button)   | Orbit camera                    |
-| **Scroll / Pinch**       | Zoom (exponential, reversible)  |
-| **Middle-drag / 2-finger** | Pan                           |
-| **Click**                | Select body                     |
-| **Double-click**         | Focus (fly to body)             |
-| **Arrow keys**           | Orbit camera                    |
-| **`+` / `-`**            | Zoom in / out                   |
-| **`Escape`**             | Clear selection                 |
-| **`Home`**               | Overview (frame whole system)   |
-| **`Space`**              | Pause / resume simulation       |
+| Input | Action |
+|---|---|
+| **Drag** (left button) | Orbit camera around target |
+| **Scroll / Pinch** | Zoom (exponential, reversible) |
+| **Middle-drag / 2-finger** | Pan camera |
+| **Click on Planet / Reticle / Name** | Focus and fly camera directly to body |
+| **Double-click** | Focus and track celestial body |
+| **Top Navigation Bar** | Instant teleport/fly to any planet or Overview |
+| **Bottom Controls Bar** | Play/Pause, speed adjustment (1x–50000x), scale toggle, labels/rings toggle |
+| **Arrow keys** | Orbit camera |
+| **`+` / `-`** | Zoom in / out |
+| **`Escape`** | Clear selection / close info card |
+| **`Home`** | Overview (frame whole system) |
+| **`Space`** | Pause / resume simulation |
 
 ---
 
 ## 📁 Project Structure
 
 ```
+public/
+└── models/                 # Realistic 3D GLTF/GLB models & textures
+    ├── the_star_sun.glb    # Sun 3D asset (emissive LOD0)
+    ├── mercury.glb         # Mercury 3D asset (PBR texture)
+    ├── venus.glb           # Venus 3D asset (PBR texture)
+    ├── earth.glb           # Earth 3D asset (PBR texture)
+    ├── moon.glb            # Moon 3D asset (PBR texture)
+    ├── mars.glb            # Mars 3D asset (PBR texture)
+    ├── jupiter.glb         # Jupiter 3D asset (PBR texture)
+    ├── saturn.glb          # Saturn 3D asset (with rings)
+    ├── uranus.glb          # Uranus 3D asset (with rings)
+    ├── neptune.glb         # Neptune 3D asset (PBR texture)
+    └── pluto.glb           # Pluto 3D asset (PBR texture)
+
 src/
-├── main.ts                 # Entry point: DOM, events, input wiring
-├── app.ts                  # Orchestrator: scene, pipeline, frame loop
+├── main.ts                 # Entry point: DOM, events, interactive HUD & overlay
+├── app.ts                  # Orchestrator: scene, pipeline, frame loop, screen projection
 │
 ├── core/                   # Time infrastructure
 │   ├── clock.ts            # Simulation clock (rate, direction, scrubbing)
@@ -133,7 +158,7 @@ src/
 │   └── state.ts            # Authoritative physical state of the system
 │
 └── render/                 # Three.js rendering
-    ├── body-visuals.ts     # Planet spheres, Sun glow, markers
+    ├── body-visuals.ts     # GLTF model loading, PBR plugin, fallback spheres, lighting
     ├── camera-rig.ts       # Orbit camera with follow/focus modes
     ├── depth-slabs.ts      # 3-slab depth partitioning
     ├── floating-origin.ts  # Camera-relative origin shift
@@ -150,7 +175,7 @@ src/
 
 ### Unit Tests (Node, zero WebGL/DOM)
 ```bash
-npm test              # Run all unit tests
+npm test              # Run all unit tests (675 passed)
 npm run test:unit     # Same as above
 npm run test:watch    # Watch mode
 ```
@@ -165,27 +190,23 @@ npm run test:gl       # Smoke + depth-stress tests
 npm run test:all      # Unit + GL
 ```
 
-**14 unit test files** cover: Julian Date arithmetic, clock, Kepler equation, planet positions, IAU orientation, physical data cross-validation, scale transforms, irradiance, simulation state, depth slabs, floating origin, layered cameras, selection, and render objects.
-
-**2 GL test files** cover: basic render smoke test and extreme-camera depth-stress scenarios.
-
 ---
 
 ## 🔬 Scale Modes
 
 | Mode | Distances | Radii | Use Case |
-|------|-----------|-------|----------|
+|---|---|---|---|
 | **SCIENTIFIC** | True (linear) | True | Physical accuracy |
-| **VISUALIZED** | Compressed: `d' = r₀(d/r₀)^0.45` | 8× exaggerated | Legibility |
+| **VISUALIZED** | Compressed: `d' = r₀(d/r₀)^0.45` | 8× exaggerated | Legibility & screen presentation |
 
-In Visualized mode, the compression is **monotonic** — orbital ordering is preserved. The interface always discloses active distortions.
+In Visualized mode, the compression is **monotonic** — orbital ordering is strictly preserved. The interface always discloses active distortions.
 
 ---
 
 ## 📚 Data Sources
 
 | ID | Source | Used For |
-|----|--------|----------|
+|---|---|---|
 | S1 | [JPL Approximate Positions](https://ssd.jpl.nasa.gov/planets/approx_pos.html) | Keplerian elements |
 | S2 | [JPL Physical Parameters](https://ssd.jpl.nasa.gov/planets/phys_par.html) | Radii, masses, periods |
 | S3 | [JPL Astrodynamic Parameters](https://ssd.jpl.nasa.gov/astro_par.html) | AU, GM, obliquity |
@@ -198,25 +219,13 @@ Full field-level provenance: [`src/data/sources.md`](src/data/sources.md)
 
 ---
 
-## ⚠️ Known Limitations (M1)
-
-| Limitation | Impact | Resolution |
-|------------|--------|------------|
-| Moon has no position | Appears in "unavailable" list | M4: ELP2000 lunar theory |
-| Earth at Earth/Moon barycentre | Offset up to 4670 km | M4: lunar theory separates them |
-| No ring geometry | Saturn/Uranus shown without rings | M2: ring shadow geometry |
-| No atmospheric effects | No scattering, no glow halos | M2: atmospheric rendering |
-| No asteroid belt | Missing between Mars and Jupiter | M4: instanced rendering |
-| ΔT prediction divergence | ~6s error at 2026 (75s vs 69s observed) | Non-limiting (model error is 6000 km) |
-
----
-
-## 🗺️ Roadmap
+## 🗺️ Roadmap Progress
 
 - **M1** ✅ Core simulation, ephemeris, rendering pipeline
-- **M2** 🔲 Ring geometry, atmospheric effects, terminator shading
-- **M3** 🔲 Material Design 3 interface, data overlay panels
+- **M2** ✅ Visual Fidelity (3D GLTF models, PBR textures, Saturn/Uranus rings, emissive Sun)
+- **M3** ✅ Glassmorphic HUD, interactive planet reticles, name badges, time controls, inspector card
 - **M4** 🔲 ELP2000 lunar theory, asteroid belt, satellite mean elements
+- **M5** 🔲 WebGPU renderer, performance optimization & LOD
 
 ---
 

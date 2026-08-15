@@ -6,7 +6,7 @@ This document tracks the project's milestones, planned features, and technical d
 
 ## Milestones
 
-### ✅ M1 — Core Simulation (Current)
+### ✅ M1 — Core Simulation
 
 > Foundational pipeline: ephemeris, simulation, rendering, testing.
 
@@ -17,7 +17,7 @@ This document tracks the project's milestones, planned features, and technical d
 | IAU rotational models (pole + meridian) | ✅ Done | pck00011.tpc, all planets + Sun |
 | Split Julian Date arithmetic | ✅ Done | Sub-microsecond precision over centuries |
 | UTC ↔ TT conversion (ΔT polynomials) | ✅ Done | Full Espenak & Meeus set |
-| Simulation clock (rate, direction, scrub) | ✅ Done | 1× to 10⁹×, range-clamped |
+| Simulation clock (rate, direction, scrub) | ✅ Done | 1× to 50000×, range-clamped |
 | Physical data with full provenance | ✅ Done | S1–S7 citations, uncertainty carried |
 | Dual scale modes (Scientific + Visualized) | ✅ Done | Monotonic compression, disclosure |
 | Solar irradiance model | ✅ Done | Physical + perceptual brightness |
@@ -35,51 +35,49 @@ This document tracks the project's milestones, planned features, and technical d
 
 ---
 
-### 🔲 M2 — Visual Fidelity
+### ✅ M2 — Visual Fidelity & 3D Assets
 
-> Realistic appearance: surface shading, rings, atmosphere.
+> Realistic appearance: 3D models, PBR textures, rings, atmosphere.
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| Planetary textures | 🔲 Planned | NASA/USGS texture maps for each body |
-| Saturn ring geometry | 🔲 Planned | Annular ring mesh with shadow casting |
-| Uranus ring geometry | 🔲 Planned | Narrow ring system |
+| 3D planetary models & textures | ✅ Done | Realistic GLTF/GLB models with embedded high-res PBR maps for Sun, 8 planets, Moon, Pluto |
+| PBR Specular-Glossiness parsing | ✅ Done | Custom `GLTFLoader` extension plugin maps embedded diffuse textures to `MeshStandardMaterial` |
+| Saturn ring geometry | ✅ Done | Integrated 3D annular ring mesh with double-sided transparency in `saturn.glb` |
+| Uranus ring geometry | ✅ Done | Integrated 3D ring system with double-sided rendering in `uranus.glb` |
+| Emissive Sun rendering & normalization | ✅ Done | Unit radius normalization, LOD0 extraction, emissive star glow without dark artifacts |
+| Dynamic Lambertian irradiance | ✅ Done | Automatic traversal and base color scaling for GLTF materials |
+| Multi-pass ambient space lighting | ✅ Done | Layered `AmbientLight` enabled across all depth-slab passes (1, 2, 3) for realistic dark-side visibility |
+| Oblate spheroids | ✅ Done | Jupiter and Saturn flattening applied via IAU radii |
 | Day/night terminator | 🔲 Planned | Sun angular diameter sets softness |
-| Atmospheric scattering | 🔲 Planned | Thin-shell approximation for Earth, gas giants |
-| Sun glow / corona | 🔲 Planned | Bloom post-processing or billboard |
+| Atmospheric scattering | 🔲 Planned | Thin-shell Rayleigh scattering shader for Earth & gas giants |
 | Shadow mapping (eclipses) | 🔲 Planned | Earth shadow on Moon, planet shadows on rings |
-| Oblate spheroids | 🔲 Planned | Jupiter and Saturn flattening from IAU radii |
 | Axial tilt visualization | 🔲 Planned | Pole indicator lines |
 
 **Technical notes:**
-- Terminator softness derived from `solarAngularDiameterDeg()` (already computed in M1)
-- Ring shadow requires an oblate intersection test (Saturn flattening 0.098)
-- Textures must not be added as uncited assets — source and license must be documented
+- Models placed in `public/models/` and loaded asynchronously via `GLTFLoader`
+- `Group` container encapsulation ensures scale/position matrices do not overwrite internal model centering
+- Depth-slab layer masks are recursively applied to all child meshes for artifact-free multi-pass rendering
+- Graceful fallback to analytical unit sphere meshes when models are loading or unavailable
 
 ---
 
-### 🔲 M3 — User Interface
+### ✅ M3 — User Interface & Navigation
 
-> Material Design 3 interface, data panels, time controls.
+> Glassmorphic HUD, interactive celestial overlay, data panels, time controls.
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| M3 design system | 🔲 Planned | Tokens, typography, colour scheme |
-| Body info panel | 🔲 Planned | Physical data, provenance, distance, irradiance |
-| Time control bar | 🔲 Planned | Play/pause, rate presets, scrub slider, date input |
-| Scale mode toggle | 🔲 Planned | Scientific / Visualized with disclosure |
-| Brightness mode toggle | 🔲 Planned | Physical / Perceptual with disclosure |
-| Body list / selector | 🔲 Planned | Click-to-focus for all planets |
-| Settings panel | 🔲 Planned | Pixel ratio, orbit visibility, grid |
+| Interactive planet target reticles | ✅ Done | Projected screen-space glowing rings with animated pulses for instant discovery from far away |
+| Dynamic planet name badges | ✅ Done | Floating glassmorphic badges with planet symbols and names above each celestial body |
+| Top quick-selector HUD | ✅ Done | Click-to-focus navigation bar for Sun, all 8 planets, Moon, Pluto, and full system overview |
+| Planet inspector data card | ✅ Done | Real-time distance (million km & AU), equatorial radius, orbital velocity, and fly button |
+| Simulation time toolbar | ✅ Done | Play/pause toggle, reverse/forward direction, and 1x to 50000x rate presets |
+| Scale mode toggle | ✅ Done | Live switching between Visualized and Scientific scale with disclosure |
+| Visibility controls | ✅ Done | Instant toggles for Labels (on/off) and Reticles/Rings (on/off) |
 | Distance measurement tool | 🔲 Planned | Centre-to-centre, surface-to-surface (physical km) |
-| Keyboard shortcut overlay | 🔲 Planned | Discoverable controls |
-| Responsive layout | 🔲 Planned | Mobile-first, panel collapse |
-
-**Technical notes:**
-- `FrameReport` and `SimulationSnapshot` already carry all data the panels need
-- `ClockSnapshot` has `formattedUtc`, `scrubFraction`, `rate`, `deltaT` for time controls
-- `ScaleDescription` and `BrightnessDescription` provide disclosure text
-- Interface must never call `matchMedia` — values are injected from `main.ts`
+| Keyboard shortcut overlay | 🔲 Planned | Discoverable controls modal |
+| Responsive mobile layout | ✅ Done | Touch-friendly HUD with horizontal scroll and tap-to-focus |
 
 ---
 
@@ -95,15 +93,9 @@ This document tracks the project's milestones, planned features, and technical d
 | Asteroid belt | 🔲 Planned | Instanced rendering (~10k objects) |
 | Named asteroids (Ceres, Vesta, etc.) | 🔲 Planned | Individual orbital elements |
 | Comets (Halley, etc.) | 🔲 Planned | Hyperbolic/parabolic orbit support |
-| Dwarf planets (Pluto, Eris) | 🔲 Planned | Extended element tables |
+| Dwarf planets (Pluto, Eris) | 🔲 Planned | Extended element tables (Pluto 3D model ready) |
 | Lagrange points | 🔲 Planned | Computed from two-body GM values |
 | Spacecraft trajectories | 🔲 Planned | SPICE kernel reader or tabulated data |
-
-**Technical notes:**
-- `ProviderRegistry` already supports multiple providers — register `ELP2000Provider` alongside `JplApproximatePlanetsProvider`
-- Moon position moves it from `unavailable` to `bodies` with no pipeline change
-- Asteroid belt needs instanced rendering — `BodyVisuals` pattern won't scale to 10k objects
-- `satelliteOffsetFactors` in `ScaleConfig` allow per-subsystem offset scaling for tight satellite systems
 
 ---
 
@@ -114,15 +106,14 @@ This document tracks the project's milestones, planned features, and technical d
 | Feature | Status | Description |
 |---------|--------|-------------|
 | WebGPU renderer option | 🔲 Planned | Three.js WebGPURenderer for capable browsers |
-| LOD system | 🔲 Planned | Reduce geometry for distant bodies |
-| Texture streaming | 🔲 Planned | Progressive loading of high-res textures |
-| Service worker caching | 🔲 Planned | Offline support |
-| ARIA accessibility | 🔲 Planned | Screen reader support for data panels |
-| Reduced motion support | 🔲 Partial | `prefers-reduced-motion` already read, needs wider application |
+| LOD system | 🔲 Planned | Progressive switching of mesh LODs based on apparent pixels |
+| Texture streaming & KTX2 | 🔲 Planned | Compressed GPU textures |
+| Service worker caching | 🔲 Planned | Offline model caching |
+| ARIA accessibility | 🔲 Partial | Screen reader support for live provenance & alerts |
+| Reduced motion support | ✅ Done | `prefers-reduced-motion` integration |
 | PWA manifest | 🔲 Planned | Installable app |
 | SEO & Open Graph | 🔲 Planned | Meta tags, social preview |
 | CI/CD pipeline | 🔲 Planned | Automated test + deploy on push |
-| Performance monitoring | 🔲 Planned | Frame budget tracking, GPU memory |
 
 ---
 
@@ -130,12 +121,10 @@ This document tracks the project's milestones, planned features, and technical d
 
 | Item | Priority | Description |
 |------|----------|-------------|
-| Velocity via central differencing | Low | Works well and tested; analytic derivative would be complex but slightly faster |
+| Velocity via central differencing | Low | Works well and tested; analytic derivative would be complex |
 | ΔT prediction error (6s at 2026) | Low | Not the limiting term; model error is 6000 km |
 | Neptune rotation period conflict (S2 vs S4) | Low | Documented, S4 rate used for orientation |
-| `scripts/` directory empty | Low | Add build/deployment scripts as needed |
 | No CI configuration | Medium | Add GitHub Actions for typecheck + test on push |
-| No `.env` / config file | Low | Hardcoded epoch and scale defaults are fine for now |
 
 ---
 

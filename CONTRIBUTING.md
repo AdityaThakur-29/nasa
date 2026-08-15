@@ -65,6 +65,15 @@ The project uses every available strict check:
 
 Your code must pass `npm run typecheck` without errors.
 
+### 7. 3D Model Asset & UI Conventions
+- Place `.glb` / `.gltf` assets in `public/models/<bodyId>.glb`.
+- Body meshes must be centered at `(0, 0, 0)` with the primary planetary sphere normalized to a unit radius (`radius = 1.0`, diameter `2.0`).
+- Always wrap loaded GLTF models in a `Group` container so frame transforms (`applyTransform`) do not overwrite internal model centering or scale.
+- Register `KHR_materials_pbrSpecularGlossiness` on `GLTFLoader` to decode embedded diffuse texture maps and alpha channels.
+- Rotational axes must align with the local Z axis (IAU rotational convention).
+- Multi-pass rendering requires layer masks to be propagated to all child meshes (`setObjectLayers`), and `AmbientLight` must be enabled across all depth slabs.
+- All GLTF assets must maintain graceful fallback to analytical spheres if unavailable.
+
 ---
 
 ## Commit Messages

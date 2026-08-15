@@ -23,6 +23,9 @@
 ## Rendering
 - `scene.background` must remain `null` — use `renderer.setClearColor()` instead.
 - Layer 0 is unused by design. Always assign explicit layers.
+- For 3D GLTF models, propagate layer masks recursively to all child meshes.
+- Wrap loaded GLTF models in a `Group` container to protect unit-radius centering.
+- Register `KHR_materials_pbrSpecularGlossiness` on `GLTFLoader` for embedded textures.
 - `renderer.autoClear` must be `false`. Each slab issues its own render call.
 - Irradiance uses PHYSICAL distance, never render-space distance.
 

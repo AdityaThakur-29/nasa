@@ -64,10 +64,27 @@ import {
   type SlabId,
 } from './render/depth-slabs';
 import { FloatingOrigin } from './render/floating-origin';
-import { LayeredCameras } from './render/layered-cameras';
+import {
+  apparentRadiusPixels,
+  LayeredCameras,
+  ndcToPixels,
+  projectToNdc,
+} from './render/layered-cameras';
 import { OrbitPaths } from './render/orbit-paths';
 import { Starfield } from './render/starfield';
 import { buildCandidates, pickBody, type SelectionResult } from './render/selection';
+
+export interface ProjectedBody {
+  readonly bodyId: string;
+  readonly displayName: string;
+  readonly screenX: number;
+  readonly screenY: number;
+  readonly inFront: boolean;
+  readonly apparentRadiusPx: number;
+  readonly visualRadius: number;
+  readonly cameraDistance: number;
+  readonly colorHex: string;
+}
 
 /**
  * Background colour.
@@ -367,6 +384,59 @@ export class SolarSystemApp {
       heightPx: this.heightPx,
       ...(baseRadiusPx === undefined ? {} : { baseRadiusPx }),
     });
+  }
+
+  /** Returns projected screen coordinates and visibility for all celestial bodies. */
+  getProjectedBodies(): readonly ProjectedBody[] {
+    if (this.lastReport === null) return [];
+    const candidates = buildCandidates(
+      this.lastReport.scaled,
+      this.origin.origin,
+      (bodyId) => SELECTION_PRIORITY[bodyId] ?? 0,
+    );
+    const result: ProjectedBody[] = [];
+    const colors: Record<string, string> = {
+      sun: '#ffd166',
+      mercury: '#adb5bd',
+      venus: '#f4a261',
+      earth: '#4ea8de',
+      moon: '#e2eafc',
+      mars: '#e76f51',
+      jupiter: '#e9c46a',
+      saturn: '#f4a261',
+      uranus: '#48cae4',
+      neptune: '#0077b6',
+      pluto: '#b8bedd',
+    };
+
+    const fovDeg = this.cameras.sharedState.fovDeg;
+
+    for (const c of candidates) {
+      const ndc = projectToNdc(this.cameras, c.relativePosition);
+      const px = ndcToPixels(ndc.x, ndc.y, this.widthPx, this.heightPx);
+      const body = this.lastReport.snapshot.bodies.find((b) => b.bodyId === c.bodyId);
+      const displayName = body?.displayName ?? c.bodyId.toUpperCase();
+      const cameraDistance = Math.max(c.relativePosition.length(), 1e-6);
+      const apparentRadiusPx = apparentRadiusPixels(
+        c.visualRadius,
+        cameraDistance,
+        fovDeg,
+        this.heightPx,
+      );
+
+      result.push({
+        bodyId: c.bodyId,
+        displayName,
+        screenX: px.x,
+        screenY: px.y,
+        inFront: ndc.w > 0,
+        apparentRadiusPx,
+        visualRadius: c.visualRadius,
+        cameraDistance,
+        colorHex: colors[c.bodyId] ?? '#ffffff',
+      });
+    }
+    return result;
   }
 
   // -------------------------------------------------------------------- frame
