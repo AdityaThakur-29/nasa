@@ -584,6 +584,21 @@ function main(): void {
 
   app.start();
 
+  // Dismiss 3D cube loading screen smoothly
+  const loadingScreen = document.querySelector<HTMLElement>('#loading-screen');
+  const loadingStatus = document.querySelector<HTMLElement>('#loading-status');
+  if (loadingStatus) {
+    loadingStatus.textContent = 'SIMULATION ENGINE READY';
+  }
+  if (loadingScreen) {
+    window.setTimeout(() => {
+      loadingScreen.classList.add('fade-out');
+      window.setTimeout(() => {
+        loadingScreen.remove();
+      }, 850);
+    }, 700);
+  }
+
   window.addEventListener('beforeunload', () => {
     app.dispose();
   });

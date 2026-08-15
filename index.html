@@ -52,6 +52,184 @@
         cursor: grabbing;
       }
 
+      /* ---------------------------------------------------- 3D Cube Loading Screen */
+      #loading-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: radial-gradient(circle at center, #091326 0%, #02030a 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 36px;
+        transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.8s;
+      }
+
+      #loading-screen.fade-out {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .cube-loader-wrapper {
+        position: relative;
+        width: 110px;
+        height: 110px;
+        perspective: 900px;
+      }
+
+      .cube-loader {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        transform-style: preserve-3d;
+        animation: cube-spin 3.2s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
+      }
+
+      .cube-face {
+        position: absolute;
+        width: 80px;
+        height: 80px;
+        left: 15px;
+        top: 15px;
+        background: rgba(78, 168, 222, 0.12);
+        border: 2px solid rgba(78, 168, 222, 0.85);
+        box-shadow: inset 0 0 20px rgba(78, 168, 222, 0.4), 0 0 16px rgba(78, 168, 222, 0.45);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .cube-face::before {
+        content: '';
+        width: 26px;
+        height: 26px;
+        border-radius: 4px;
+        background: rgba(255, 209, 102, 0.7);
+        box-shadow: 0 0 14px #ffd166;
+        animation: pulse-core 2s infinite ease-in-out;
+      }
+
+      .cube-face.front  { transform: translateZ(40px); }
+      .cube-face.back   { transform: rotateY(180deg) translateZ(40px); }
+      .cube-face.right  { transform: rotateY(90deg) translateZ(40px); }
+      .cube-face.left   { transform: rotateY(-90deg) translateZ(40px); }
+      .cube-face.top    { transform: rotateX(90deg) translateZ(40px); }
+      .cube-face.bottom { transform: rotateX(-90deg) translateZ(40px); }
+
+      .cube-shadow {
+        position: absolute;
+        bottom: -32px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 80px;
+        height: 20px;
+        background: radial-gradient(ellipse at center, rgba(78, 168, 222, 0.5) 0%, rgba(0, 0, 0, 0) 70%);
+        border-radius: 50%;
+        animation: shadow-scale 3.2s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
+      }
+
+      @keyframes cube-spin {
+        0% {
+          transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+        }
+        33% {
+          transform: rotateX(180deg) rotateY(90deg) rotateZ(0deg);
+        }
+        66% {
+          transform: rotateX(180deg) rotateY(270deg) rotateZ(180deg);
+        }
+        100% {
+          transform: rotateX(360deg) rotateY(360deg) rotateZ(360deg);
+        }
+      }
+
+      @keyframes shadow-scale {
+        0%, 100% {
+          transform: translateX(-50%) scale(1);
+          opacity: 0.6;
+        }
+        50% {
+          transform: translateX(-50%) scale(0.65);
+          opacity: 0.25;
+        }
+      }
+
+      @keyframes pulse-core {
+        0%, 100% {
+          transform: scale(0.85);
+          opacity: 0.6;
+        }
+        50% {
+          transform: scale(1.2);
+          opacity: 1;
+        }
+      }
+
+      .loading-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        text-align: center;
+      }
+
+      .loading-title {
+        font-family: 'Outfit', sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        background: linear-gradient(135deg, #ffffff 0%, #4ea8de 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .loading-subtitle {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #94a3b8;
+        letter-spacing: 0.08em;
+      }
+
+      .loading-bar {
+        width: 190px;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 8px;
+        position: relative;
+      }
+
+      .loading-bar-inner {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 40%;
+        background: linear-gradient(90deg, #3a86ff, #ffd166);
+        border-radius: 999px;
+        animation: loading-bar-move 1.6s infinite ease-in-out;
+      }
+
+      @keyframes loading-bar-move {
+        0% {
+          left: -40%;
+          width: 30%;
+        }
+        50% {
+          left: 30%;
+          width: 50%;
+        }
+        100% {
+          left: 100%;
+          width: 30%;
+        }
+      }
+
       /* ---------------------------------------------------- Planet Overlay (Reticles & Labels) */
       #planet-overlay {
         position: fixed;
@@ -99,143 +277,166 @@
         box-shadow: 0 0 8px var(--planet-color, #fff);
       }
 
-      .planet-target:hover .planet-reticle,
+      .planet-target:hover .planet-reticle {
+        transform: scale(1.28);
+        border-style: solid;
+        box-shadow: 0 0 18px var(--planet-color, #4ea8de),
+                    inset 0 0 10px var(--planet-color, #4ea8de);
+      }
+
       .planet-target.selected .planet-reticle {
         width: 34px;
         height: 34px;
         border-style: solid;
         border-width: 2px;
-        box-shadow: 0 0 18px var(--planet-color, #4ea8de),
-                    inset 0 0 10px var(--planet-glow, rgba(78, 168, 222, 0.5));
-        animation: reticlePulse 2s infinite ease-in-out;
+        border-color: #ffd166;
+        box-shadow: 0 0 20px rgba(255, 209, 102, 0.8),
+                    inset 0 0 12px rgba(255, 209, 102, 0.5);
+        animation: pulse-ring 1.8s infinite ease-in-out;
       }
 
-      @keyframes reticlePulse {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.1); opacity: 0.85; }
+      .planet-target.selected .planet-reticle::after {
+        background: #ffd166;
+        box-shadow: 0 0 10px #ffd166;
+      }
+
+      @keyframes pulse-ring {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 0.9;
+        }
+        50% {
+          transform: scale(1.15);
+          opacity: 1;
+        }
       }
 
       .planet-label {
-        margin-top: 5px;
-        padding: 3px 8px;
-        background: var(--glass-bg);
-        border: 1px solid var(--glass-border);
-        border-radius: 12px;
-        backdrop-filter: blur(8px);
-        font-family: 'Outfit', sans-serif;
+        margin-top: 6px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: rgba(8, 14, 28, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: #e2e8f0;
+        font-family: 'Outfit', system-ui, sans-serif;
         font-size: 11px;
         font-weight: 600;
-        letter-spacing: 0.03em;
-        color: var(--text-primary);
+        letter-spacing: 0.04em;
         white-space: nowrap;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+        transition: all 0.2s ease;
         display: flex;
         align-items: center;
         gap: 4px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-        transition: all 0.2s ease;
       }
 
-      .planet-target:hover .planet-label,
-      .planet-target.selected .planet-label {
-        background: rgba(20, 32, 56, 0.9);
+      .planet-target:hover .planet-label {
+        background: rgba(14, 24, 48, 0.95);
         border-color: var(--planet-color, #4ea8de);
         color: #ffffff;
-        transform: translateY(2px) scale(1.05);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px var(--planet-glow, rgba(78, 168, 222, 0.4));
+        transform: translateY(2px);
+        box-shadow: 0 4px 16px var(--planet-glow, rgba(78, 168, 222, 0.4));
       }
 
-      /* ---------------------------------------------------- Top Navigation Bar */
+      .planet-target.selected .planet-label {
+        background: rgba(30, 24, 10, 0.95);
+        border-color: #ffd166;
+        color: #ffd166;
+      }
+
+      /* ---------------------------------------------------- Top Navigation HUD */
       #top-bar {
         position: fixed;
         top: 14px;
         left: 50%;
         transform: translateX(-50%);
-        z-index: 20;
         display: flex;
         align-items: center;
         gap: 6px;
         padding: 6px 10px;
         background: var(--glass-bg);
         border: 1px solid var(--glass-border);
-        border-radius: 28px;
+        border-radius: 16px;
         backdrop-filter: blur(16px);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+        z-index: 20;
         max-width: 95vw;
         overflow-x: auto;
-        scrollbar-width: none;
       }
 
       #top-bar::-webkit-scrollbar {
-        display: none;
+        height: 0;
       }
 
       .nav-btn {
-        background: rgba(255, 255, 255, 0.05);
+        background: transparent;
         border: 1px solid transparent;
         color: var(--text-secondary);
-        padding: 6px 11px;
-        border-radius: 18px;
+        padding: 6px 12px;
+        border-radius: 10px;
         font-family: 'Outfit', sans-serif;
         font-size: 12px;
-        font-weight: 500;
+        font-weight: 600;
         cursor: pointer;
         display: flex;
         align-items: center;
-        gap: 5px;
-        white-space: nowrap;
+        gap: 6px;
         transition: all 0.2s ease;
+        white-space: nowrap;
       }
 
       .nav-btn:hover {
-        background: var(--glass-hover);
         color: var(--text-primary);
-        border-color: rgba(255, 255, 255, 0.2);
-        transform: translateY(-1px);
+        background: var(--glass-hover);
+        border-color: rgba(255, 255, 255, 0.15);
       }
 
       .nav-btn.active {
-        background: rgba(78, 168, 222, 0.2);
-        border-color: var(--accent-blue);
         color: #ffffff;
+        background: linear-gradient(135deg, rgba(78, 168, 222, 0.35), rgba(0, 119, 182, 0.4));
+        border-color: var(--accent-blue);
         box-shadow: 0 0 12px var(--accent-glow);
       }
 
-      .nav-btn.overview-btn {
-        background: rgba(255, 209, 102, 0.12);
-        border-color: rgba(255, 209, 102, 0.3);
-        color: #ffd166;
+      .overview-btn {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.12);
+        color: var(--text-primary);
       }
 
-      .nav-btn.overview-btn:hover {
-        background: rgba(255, 209, 102, 0.25);
-        box-shadow: 0 0 14px rgba(255, 209, 102, 0.4);
+      .divider {
+        width: 1px;
+        height: 18px;
+        background: rgba(255, 255, 255, 0.15);
+        margin: 0 2px;
       }
 
       /* ---------------------------------------------------- Bottom Simulation Controls */
       #bottom-controls {
         position: fixed;
-        bottom: 14px;
+        bottom: 16px;
         left: 50%;
         transform: translateX(-50%);
-        z-index: 20;
         display: flex;
         align-items: center;
         gap: 8px;
         padding: 6px 12px;
         background: var(--glass-bg);
         border: 1px solid var(--glass-border);
-        border-radius: 24px;
+        border-radius: 16px;
         backdrop-filter: blur(16px);
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        z-index: 20;
       }
 
       .control-btn {
-        background: rgba(255, 255, 255, 0.07);
+        background: rgba(255, 255, 255, 0.06);
         border: 1px solid rgba(255, 255, 255, 0.1);
         color: var(--text-primary);
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -246,122 +447,119 @@
 
       .control-btn:hover {
         background: var(--glass-hover);
-        border-color: rgba(255, 255, 255, 0.3);
-        transform: scale(1.08);
+        border-color: rgba(255, 255, 255, 0.2);
+        transform: translateY(-1px);
       }
 
       .control-btn.active {
-        background: var(--accent-blue);
-        color: #02030a;
+        background: rgba(78, 168, 222, 0.3);
         border-color: var(--accent-blue);
-      }
-
-      .divider {
-        width: 1px;
-        height: 20px;
-        background: var(--glass-border);
       }
 
       .rate-badge {
         font-family: 'JetBrains Mono', monospace;
         font-size: 11px;
-        color: var(--accent-blue);
+        font-weight: 600;
         padding: 4px 8px;
+        background: rgba(255, 255, 255, 0.08);
         border-radius: 6px;
-        background: rgba(78, 168, 222, 0.1);
-        border: 1px solid rgba(78, 168, 222, 0.2);
+        color: #4ea8de;
         cursor: pointer;
+        border: 1px solid rgba(78, 168, 222, 0.3);
+      }
+
+      .rate-badge:hover {
+        background: rgba(78, 168, 222, 0.2);
       }
 
       .toggle-chip {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid var(--glass-border);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         color: var(--text-secondary);
         padding: 5px 10px;
-        border-radius: 12px;
+        border-radius: 8px;
         font-size: 11px;
+        font-weight: 500;
         cursor: pointer;
         transition: all 0.2s ease;
       }
 
-      .toggle-chip:hover {
-        background: var(--glass-hover);
-        color: var(--text-primary);
-      }
-
       .toggle-chip.active {
-        background: rgba(78, 168, 222, 0.2);
-        border-color: var(--accent-blue);
-        color: #fff;
+        background: rgba(78, 168, 222, 0.25);
+        border-color: rgba(78, 168, 222, 0.6);
+        color: #ffffff;
       }
 
-      /* ---------------------------------------------------- Planet Info Card */
+      /* ---------------------------------------------------- Planet Inspector Card */
       #planet-card {
         position: fixed;
-        top: 70px;
-        right: 18px;
+        right: 20px;
+        top: 80px;
         width: 280px;
         background: var(--glass-bg);
         border: 1px solid var(--glass-border);
-        border-radius: 16px;
+        border-radius: 18px;
         backdrop-filter: blur(20px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
         padding: 16px;
-        z-index: 25;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        z-index: 20;
         display: none;
         flex-direction: column;
         gap: 12px;
-        animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      @keyframes slideIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
+      @keyframes slide-in-right {
+        from {
+          opacity: 0;
+          transform: translateX(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
       }
 
       .card-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 10px;
       }
 
       .card-title-group {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
       }
 
       .card-icon {
-        font-size: 22px;
+        font-size: 24px;
       }
 
       .card-title {
+        margin: 0;
         font-family: 'Outfit', sans-serif;
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 700;
         color: #ffffff;
-        margin: 0;
       }
 
       .card-subtitle {
         font-size: 11px;
         color: var(--text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
       }
 
       .close-card-btn {
-        background: none;
+        background: transparent;
         border: none;
         color: var(--text-muted);
-        font-size: 16px;
+        font-size: 14px;
         cursor: pointer;
         padding: 4px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s;
+        border-radius: 6px;
+        transition: all 0.2s ease;
       }
 
       .close-card-btn:hover {
@@ -372,31 +570,29 @@
       .card-stats {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-        background: rgba(0, 0, 0, 0.25);
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        gap: 6px;
+        font-size: 12px;
       }
 
       .stat-row {
         display: flex;
         justify-content: space-between;
-        font-size: 12px;
+        padding: 4px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       }
 
       .stat-label {
-        color: var(--text-muted);
+        color: var(--text-secondary);
       }
 
       .stat-value {
         font-family: 'JetBrains Mono', monospace;
         font-weight: 500;
-        color: var(--text-primary);
+        color: #e2e8f0;
       }
 
       .card-focus-btn {
-        width: 100%;
+        margin-top: 4px;
         padding: 8px 12px;
         background: linear-gradient(135deg, #3a86ff, #0077b6);
         border: none;
@@ -452,6 +648,28 @@
     </style>
   </head>
   <body>
+    <!-- 3D Cube Loading Screen from 21st.dev -->
+    <div id="loading-screen">
+      <div class="cube-loader-wrapper">
+        <div class="cube-loader">
+          <div class="cube-face front"></div>
+          <div class="cube-face back"></div>
+          <div class="cube-face right"></div>
+          <div class="cube-face left"></div>
+          <div class="cube-face top"></div>
+          <div class="cube-face bottom"></div>
+        </div>
+        <div class="cube-shadow"></div>
+      </div>
+      <div class="loading-content">
+        <div class="loading-title">Solar System Visualization</div>
+        <div class="loading-subtitle" id="loading-status">INITIALIZING ASTRODYNAMICS & 3D ASSETS...</div>
+        <div class="loading-bar">
+          <div class="loading-bar-inner"></div>
+        </div>
+      </div>
+    </div>
+
     <canvas id="viewport" aria-label="Solar System visualization"></canvas>
 
     <!-- Interactive 3D Planet Circles & Labels Overlay -->
