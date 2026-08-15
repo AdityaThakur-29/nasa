@@ -33,6 +33,28 @@ export default defineConfig({
       },
       {
         resolve: { alias },
+        /**
+         * Pre-bundled explicitly, because discovering them mid-run makes the gate flaky.
+         *
+         * Vite optimises bare dependencies lazily. The three.js line addons are only
+         * reached once a test imports OrbitPaths, so on a cold cache Vite discovers them
+         * during the run, rebuilds, and reloads the page. Vitest reports that as
+         * "Vite unexpectedly reloaded a test. This may cause tests to fail, lead to flaky
+         * behaviour or duplicated test runs", which is exactly what a hard gate must not
+         * do: a gate that can restart itself mid-assertion proves nothing.
+         *
+         * Listing them here means they are bundled before the first test executes.
+         */
+        optimizeDeps: {
+          include: [
+            'three',
+            'three/addons/lines/Line2.js',
+            'three/addons/lines/LineGeometry.js',
+            'three/addons/lines/LineMaterial.js',
+            'three/addons/lines/LineSegments2.js',
+            'three/addons/lines/LineSegmentsGeometry.js',
+          ],
+        },
         test: {
           name: 'gl',
           include: ['test/gl/**/*.test.ts'],

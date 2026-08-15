@@ -22,7 +22,28 @@
  *   (0.5, -0.25, -1e5)    0.000006790, -0.000006036      1.0000 / 0.9800 / -19.0
  *   (-100, 50, -4.4e6)   -0.000030864, 0.000027434       1.0000 / 0.9995 / 0.5455
  *
- * Two consequences the rest of the render layer depends on:
+ * NOT BIT-IDENTICAL, AND WHY. The cancellation of the near plane is exact in
+ * algebra but not in floating point. three.js builds the matrix as
+ *
+ *   top    = near * tan(fov/2)
+ *   height = 2 * top
+ *   width  = aspect * height
+ *   m00    = 2 * near / width
+ *
+ * so `near` appears in both the numerator and the denominator and cancels only to
+ * within rounding. Measured m00 at aspect 16/9, fov 45:
+ *
+ *   near = 1e-7   1.3579951288348659499
+ *   near = 1e3    1.3579951288348661720   <- equals the analytic value
+ *   near = 1e6    1.3579951288348661720
+ *
+ * Over 2000 randomised points the worst relative disagreement in NDC x or y
+ * between the 1e-7 and 1e6 cameras was 4.346e-16, which is 2.0 units in the last
+ * place. At a 1080-pixel viewport height that is 4.7e-13 pixels.
+ *
+ * The two consequences below therefore hold to twelve orders of magnitude beyond
+ * anything observable, but the accurate statement is "the same pixel to within
+ * 2 ULP", not "the same value".
  *
  *   1. Screen-space selection can use ANY of the three cameras, because they all
  *      project to the same pixel. The hybrid picker therefore needs one matrix,

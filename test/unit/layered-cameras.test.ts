@@ -31,6 +31,52 @@ import {
 } from '@/render/depth-slabs';
 import { DEFAULT_SEED, forEachSample, formatPropertyFailure } from '../helpers/seeded';
 
+/**
+ * Tolerance for the shared-projection assertions, in units in the last place.
+ *
+ * WHY A ULP COMPARISON RATHER THAN EQUALITY OR toBeCloseTo.
+ *
+ * The near plane cancels out of the NDC x and y expressions algebraically, but not
+ * numerically: three.js builds the projection matrix as m00 = 2*near/width with
+ * width itself proportional to near, so the cancellation is only exact to within
+ * rounding. An equality assertion therefore fails, and it should: the values really
+ * do differ in the last bit or two.
+ *
+ * toBeCloseTo is also wrong here, because it tests an ABSOLUTE difference. NDC
+ * values in these tests range from 1e-6 for a distant planet to 5.7e4 for a point
+ * far outside the frustum, and no single absolute tolerance is meaningful across
+ * eight orders of magnitude. A relative comparison scaled to the magnitude being
+ * compared is the only form that means the same thing at both ends.
+ *
+ * MEASURED BASIS: over 20000 randomised samples, varying field of view, aspect
+ * ratio, both plane pairs and the point itself, the worst disagreement between the
+ * closest and furthest cameras was 2.64 ULP. 16 ULP is therefore a factor of six of
+ * headroom, and still bounds the error at 3.6e-15 in NDC, which is 3.8e-12 pixels
+ * at a 1080-pixel viewport height.
+ */
+const PROJECTION_ULP_TOLERANCE = 16;
+
+/**
+ * Asserts two values agree to within PROJECTION_ULP_TOLERANCE units in the last
+ * place, scaled to the larger of the two magnitudes.
+ */
+function expectUlpAgreement(actual: number, expected: number, label: string): void {
+  const scale = Math.max(Math.abs(actual), Math.abs(expected));
+
+  // Both exactly zero: nothing to scale against, and they already agree.
+  if (scale === 0) {
+    expect(actual, label).toBe(expected);
+    return;
+  }
+
+  const ulps = Math.abs(actual - expected) / (scale * Number.EPSILON);
+  expect(
+    ulps,
+    `${label}: ${actual} vs ${expected} differ by ${ulps.toFixed(2)} ULP, ` +
+      `above the ${PROJECTION_ULP_TOLERANCE} ULP tolerance`,
+  ).toBeLessThanOrEqual(PROJECTION_ULP_TOLERANCE);
+}
+
 /** A scene occupying two slabs: something close, and the outer system. */
 function twoSlabScene(): readonly DepthCandidate[] {
   return [
@@ -189,8 +235,8 @@ describe('the shared projection centre', () => {
 
       for (const id of RENDER_ORDER.slice(1)) {
         const projected = point.clone().project(cameras.cameraFor(id));
-        expect(projected.x, `${id} x for ${point.toArray().join(',')}`).toBe(reference.x);
-        expect(projected.y, `${id} y for ${point.toArray().join(',')}`).toBe(reference.y);
+        expectUlpAgreement(projected.x, reference.x, `${id} x for ${point.toArray().join(',')}`);
+        expectUlpAgreement(projected.y, reference.y, `${id} y for ${point.toArray().join(',')}`);
       }
     }
   });
@@ -219,14 +265,20 @@ describe('the shared projection centre', () => {
       const viaNear = point.clone().project(near);
       const viaFar = point.clone().project(far);
 
-      expect(
+      // ULP-relative, not absolute. NDC magnitudes here span from about 1e-6 for a
+      // distant body to 5.7e4 for a point outside the frustum, so an absolute
+      // tolerance would be far too loose at one end and impossible at the other.
+      // The seed is carried through the label so any failure is reproducible.
+      expectUlpAgreement(
         viaNear.x,
+        viaFar.x,
         formatPropertyFailure({ ...context, axis: 'x' }, viaFar.x, viaNear.x),
-      ).toBeCloseTo(viaFar.x, 12);
-      expect(
+      );
+      expectUlpAgreement(
         viaNear.y,
+        viaFar.y,
         formatPropertyFailure({ ...context, axis: 'y' }, viaFar.y, viaNear.y),
-      ).toBeCloseTo(viaFar.y, 12);
+      );
     });
   });
 

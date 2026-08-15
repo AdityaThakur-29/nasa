@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>Solar System</title>
+    <style>
+      /*
+       * Minimal shell only. The scientific data overlay is M3; this exists to give the
+       * canvas a full-viewport surface and to stop the browser's default touch gestures
+       * from fighting the camera.
+       */
+      :root {
+        color-scheme: dark;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #02030a;
+      }
+
+      #viewport {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        /*
+         * Without this the browser interprets drags as scroll and pinches as page zoom,
+         * so the camera would receive no touch input at all. Contract section 6 requires
+         * pinch to zoom and two-finger drag to pan.
+         */
+        touch-action: none;
+        /* A drag that starts on the canvas must not select surrounding text. */
+        user-select: none;
+        cursor: grab;
+      }
+
+      #viewport.dragging {
+        cursor: grabbing;
+      }
+
+      /*
+       * Provenance strip. Not the M3 interface, just an always-visible statement of what
+       * the view is showing, so the scale distortion and the model behind the positions
+       * are never implicit. Contract sections 1.5, 9 and 11.
+       */
+      #provenance {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        margin: 0;
+        padding: 8px 12px;
+        font:
+          11px/1.5 ui-monospace,
+          "SF Mono",
+          Menlo,
+          Consolas,
+          monospace;
+        letter-spacing: 0.04em;
+        /* 4.5:1 minimum against the background, per contract section 28. */
+        color: #c8d2e0;
+        background: rgba(4, 8, 18, 0.72);
+        border-top-right-radius: 2px;
+        pointer-events: none;
+        white-space: pre-line;
+      }
+
+      #failure {
+        position: fixed;
+        inset: 0;
+        display: none;
+        place-content: center;
+        padding: 2rem;
+        font:
+          13px/1.6 ui-monospace,
+          Menlo,
+          Consolas,
+          monospace;
+        color: #f0d4d4;
+        background: #0a0406;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="viewport" aria-label="Solar System visualization"></canvas>
+    <pre id="provenance" aria-live="polite"></pre>
+    <pre id="failure" role="alert"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
