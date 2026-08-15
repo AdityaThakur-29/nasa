@@ -439,6 +439,16 @@ export class SolarSystemApp {
     return result;
   }
 
+  /** Promise that resolves when all 3D planetary models are loaded */
+  get whenModelsLoaded(): Promise<{ loaded: number; total: number }> {
+    return this.visuals.whenLoaded;
+  }
+
+  /** Callback fired as each 3D planetary model finishes loading */
+  set onModelProgress(cb: ((loaded: number, total: number, bodyId: string) => void) | undefined) {
+    this.visuals.onProgress = cb;
+  }
+
   // -------------------------------------------------------------------- frame
 
   /**

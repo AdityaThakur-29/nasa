@@ -582,22 +582,46 @@ function main(): void {
 
   window.setInterval(updateProvenance, 250);
 
-  app.start();
-
-  // Dismiss 3D cube loading screen smoothly
+  // 3D Cube Loading Screen Progress and Dismissal
   const loadingScreen = document.querySelector<HTMLElement>('#loading-screen');
   const loadingStatus = document.querySelector<HTMLElement>('#loading-status');
-  if (loadingStatus) {
-    loadingStatus.textContent = 'SIMULATION ENGINE READY';
-  }
-  if (loadingScreen) {
-    window.setTimeout(() => {
-      loadingScreen.classList.add('fade-out');
+  const loadingBarInner = document.querySelector<HTMLElement>('.loading-bar-inner');
+
+  app.onModelProgress = (loaded, total, bodyId) => {
+    const meta = PLANET_METADATA[bodyId];
+    const name = meta?.name.toUpperCase() ?? bodyId.toUpperCase();
+    const percent = Math.round((loaded / total) * 100);
+
+    if (loadingStatus) {
+      loadingStatus.textContent = `LOADING 3D ASSETS (${loaded}/${total}): ${name}...`;
+    }
+    if (loadingBarInner) {
+      loadingBarInner.style.animation = 'none';
+      loadingBarInner.style.left = '0';
+      loadingBarInner.style.width = `${percent}%`;
+    }
+  };
+
+  // Wait until all 3D models are fully loaded before dismissing the loading screen
+  app.whenModelsLoaded.then(() => {
+    if (loadingStatus) {
+      loadingStatus.textContent = 'ALL 3D PLANETS LOADED & READY';
+    }
+    if (loadingBarInner) {
+      loadingBarInner.style.width = '100%';
+    }
+
+    if (loadingScreen) {
       window.setTimeout(() => {
-        loadingScreen.remove();
-      }, 850);
-    }, 700);
-  }
+        loadingScreen.classList.add('fade-out');
+        window.setTimeout(() => {
+          loadingScreen.remove();
+        }, 850);
+      }, 500);
+    }
+  });
+
+  app.start();
 
   window.addEventListener('beforeunload', () => {
     app.dispose();

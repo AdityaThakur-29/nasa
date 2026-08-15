@@ -266,10 +266,21 @@ export class BodyVisuals {
   private readonly ambientLight: AmbientLight;
   private lastFrame: BodyVisualState[] = [];
 
+  private modelsLoadedCount = 0;
+  private totalModelsCount = 0;
+  public onProgress: ((loaded: number, total: number, bodyId: string) => void) | undefined =
+    undefined;
+  public readonly whenLoaded: Promise<{ loaded: number; total: number }>;
+  private resolveWhenLoaded!: (res: { loaded: number; total: number }) => void;
+
   constructor(
     private readonly scene: Scene,
     bodyIds: readonly string[],
   ) {
+    this.whenLoaded = new Promise((resolve) => {
+      this.resolveWhenLoaded = resolve;
+    });
+
     this.sphereGeometry = new SphereGeometry(1, SPHERE_WIDTH_SEGMENTS, SPHERE_HEIGHT_SEGMENTS);
 
     for (const bodyId of bodyIds) {
@@ -654,8 +665,14 @@ export class BodyVisuals {
   }
 
   private loadModels(bodyIds: readonly string[]): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {
+      this.resolveWhenLoaded({ loaded: 0, total: 0 });
+      return;
+    }
     const loader = new GLTFLoader();
+
+    this.totalModelsCount = bodyIds.length;
+    this.modelsLoadedCount = 0;
 
     // Register KHR_materials_pbrSpecularGlossiness extension parser so all embedded
     // planet textures (Earth, Jupiter, Mars, Venus, Saturn, Moon, Mercury, Neptune) load
@@ -722,7 +739,14 @@ export class BodyVisuals {
     urls: readonly string[],
     index: number,
   ): void {
-    if (index >= urls.length) return;
+    if (index >= urls.length) {
+      this.modelsLoadedCount++;
+      this.onProgress?.(this.modelsLoadedCount, this.totalModelsCount, bodyId);
+      if (this.modelsLoadedCount >= this.totalModelsCount) {
+        this.resolveWhenLoaded({ loaded: this.modelsLoadedCount, total: this.totalModelsCount });
+      }
+      return;
+    }
     const url = urls[index]!;
 
     loader.load(
@@ -821,6 +845,12 @@ export class BodyVisuals {
         this.scene.remove(placeholder);
         this.scene.add(container);
         this.meshes.set(bodyId, container);
+
+        this.modelsLoadedCount++;
+        this.onProgress?.(this.modelsLoadedCount, this.totalModelsCount, bodyId);
+        if (this.modelsLoadedCount >= this.totalModelsCount) {
+          this.resolveWhenLoaded({ loaded: this.modelsLoadedCount, total: this.totalModelsCount });
+        }
       },
       undefined,
       (error) => {
@@ -828,6 +858,11 @@ export class BodyVisuals {
           this.loadModelWithFallback(loader, bodyId, urls, index + 1);
         } else {
           console.warn(`[BodyVisuals] Failed to load 3D model for "${bodyId}" from ${url}:`, error);
+          this.modelsLoadedCount++;
+          this.onProgress?.(this.modelsLoadedCount, this.totalModelsCount, bodyId);
+          if (this.modelsLoadedCount >= this.totalModelsCount) {
+            this.resolveWhenLoaded({ loaded: this.modelsLoadedCount, total: this.totalModelsCount });
+          }
         }
       },
     );
