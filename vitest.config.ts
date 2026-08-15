@@ -53,6 +53,7 @@ export default defineConfig({
             'three/addons/lines/LineMaterial.js',
             'three/addons/lines/LineSegments2.js',
             'three/addons/lines/LineSegmentsGeometry.js',
+            'three/addons/loaders/GLTFLoader.js',
           ],
         },
         test: {

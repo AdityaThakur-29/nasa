@@ -1,1 +1,23 @@
 node_modules/
+dist/
+*.local
+.env
+.env.*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage/
+test-results/
+
+# Build
+*.tsbuildinfo

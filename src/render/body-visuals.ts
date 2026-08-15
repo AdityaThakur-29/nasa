@@ -41,6 +41,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Object3D,
   Points,
   PointLight,
   type Scene,
@@ -48,6 +49,7 @@ import {
   SphereGeometry,
   Vector3,
 } from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { BodySimState, SimulationSnapshot } from '../sim/state';
 import type { ScaledBody } from '../sim/scale';
 import type { BodyIllumination } from '../sim/irradiance';
@@ -230,7 +232,8 @@ interface MarkerBuffer {
  */
 export class BodyVisuals {
   private readonly sphereGeometry: SphereGeometry;
-  private readonly meshes = new Map<string, Mesh>();
+  private readonly meshes = new Map<string, Object3D>();
+  private readonly gltfOriginalColors = new Map<any, Color>();
 
   /**
    * Materials, typed as a union rather than cast.
@@ -322,6 +325,8 @@ export class BodyVisuals {
     this.sunLight.layers.disableAll();
     for (const slabId of RENDER_ORDER) this.sunLight.layers.enable(SLAB_LAYERS[slabId]);
     scene.add(this.sunLight);
+
+    this.loadModels(bodyIds);
   }
 
   /** Per-body outcome of the most recent update. */
@@ -330,7 +335,7 @@ export class BodyVisuals {
   }
 
   /** A body's mesh, or undefined if the body is not visualised. */
-  meshFor(bodyId: string): Mesh | undefined {
+  meshFor(bodyId: string): Object3D | undefined {
     return this.meshes.get(bodyId);
   }
 
@@ -408,7 +413,7 @@ export class BodyVisuals {
 
       const drawnAsMarker = apparentRadiusPx * 2 < MARKER_DIAMETER_THRESHOLD_PX;
 
-      mesh.layers.set(SLAB_LAYERS[slab]);
+      this.setObjectLayers(mesh, SLAB_LAYERS[slab]);
 
       if (drawnAsMarker) {
         // Only the marker is drawn. Drawing both would make the sphere and the marker
@@ -441,7 +446,19 @@ export class BodyVisuals {
   dispose(): void {
     this.sphereGeometry.dispose();
     for (const material of this.materials.values()) material.dispose();
-    for (const mesh of this.meshes.values()) this.scene.remove(mesh);
+    
+    for (const mesh of this.meshes.values()) {
+      this.scene.remove(mesh);
+      mesh.traverse((child) => {
+        if (child instanceof Mesh) {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            for (const mat of materials) mat.dispose();
+          }
+        }
+      });
+    }
 
     for (const buffer of this.markerBuffers.values()) {
       buffer.geometry.dispose();
@@ -532,7 +549,7 @@ export class BodyVisuals {
    * world Z.
    */
   private applyTransform(
-    mesh: Mesh,
+    mesh: Object3D,
     physical: BodySimState,
     scaledBody: ScaledBody,
     x: number,
@@ -572,12 +589,40 @@ export class BodyVisuals {
   private applyIllumination(bodyId: string, illumination: BodyIllumination | undefined): void {
     if (bodyId === 'sun' || illumination === undefined) return;
 
-    const material = this.materials.get(bodyId);
-    const base = this.baseColours.get(bodyId);
-    if (material === undefined || base === undefined) return;
+    const object = this.meshes.get(bodyId);
+    if (object === undefined) return;
 
     const factor = illumination.brightnessFactor;
-    material.color.setRGB(base.r * factor, base.g * factor, base.b * factor);
+
+    // Check if it's the placeholder mesh (has standard material we created)
+    const placeholderMaterial = this.materials.get(bodyId);
+    const placeholderBase = this.baseColours.get(bodyId);
+    if (
+      placeholderMaterial &&
+      placeholderBase &&
+      object instanceof Mesh &&
+      object.material === placeholderMaterial
+    ) {
+      placeholderMaterial.color.setRGB(
+        placeholderBase.r * factor,
+        placeholderBase.g * factor,
+        placeholderBase.b * factor,
+      );
+      return;
+    }
+
+    // If it's a GLTF model, traverse and scale its materials' colors
+    object.traverse((child) => {
+      if (child instanceof Mesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const mat of materials) {
+          const baseColor = this.gltfOriginalColors.get(mat);
+          if (baseColor && 'color' in mat && mat.color instanceof Color) {
+            mat.color.setRGB(baseColor.r * factor, baseColor.g * factor, baseColor.b * factor);
+          }
+        }
+      }
+    });
   }
 
   /**
@@ -595,6 +640,59 @@ export class BodyVisuals {
       sun.renderPosition.y - origin.y,
       sun.renderPosition.z - origin.z,
     );
+  }
+
+  private loadModels(bodyIds: readonly string[]): void {
+    if (typeof window === 'undefined') return;
+    const loader = new GLTFLoader();
+
+    for (const bodyId of bodyIds) {
+      const url = `/models/${bodyId}.glb`;
+      loader.load(
+        url,
+        (gltf) => {
+          const model = gltf.scene;
+          const placeholder = this.meshes.get(bodyId);
+          if (placeholder === undefined) return;
+
+          this.scene.remove(placeholder);
+
+          model.name = `body:${bodyId}`;
+          model.layers.mask = placeholder.layers.mask;
+          model.visible = placeholder.visible;
+          model.matrixAutoUpdate = false;
+
+          model.traverse((child) => {
+            if (child instanceof Mesh) {
+              child.matrixAutoUpdate = false;
+              child.frustumCulled = false;
+              if (child.material) {
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                for (const mat of materials) {
+                  if ('color' in mat && mat.color instanceof Color) {
+                    this.gltfOriginalColors.set(mat, mat.color.clone());
+                  }
+                }
+              }
+            }
+          });
+
+          this.scene.add(model);
+          this.meshes.set(bodyId, model);
+        },
+        undefined,
+        (error) => {
+          console.warn(`[BodyVisuals] Failed to load 3D model for "${bodyId}" from ${url}:`, error);
+        }
+      );
+    }
+  }
+
+  private setObjectLayers(object: Object3D, layer: number): void {
+    object.layers.set(layer);
+    object.traverse((child) => {
+      child.layers.set(layer);
+    });
   }
 }
 
