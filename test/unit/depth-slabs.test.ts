@@ -26,6 +26,8 @@ import {
   DEPTH_QUANTUM,
   type DepthCandidate,
   type DepthPlan,
+  FAR_PLANE_CEILING,
+  NEAR_PLANE_FLOOR,
   RENDER_ORDER,
   SLAB_DEFINITIONS,
   type SlabId,
@@ -377,12 +379,58 @@ describe('plane expansion', () => {
   });
 
   it('clamps the far plane to the slab ceiling and reports it', () => {
-    const remote = candidate('remote', 1e13, 1e13);
-    const plan = planDepthSlabs([remote]);
+    /**
+     * Reaching the ceiling now requires genuinely absurd geometry, which is the
+     * point: at 1e18 render units it sits around 53000 light years, so no scene
+     * this application renders can hit it.
+     *
+     * An earlier revision capped the far plane at 1e14 and that made the
+     * containment invariant unsatisfiable for merely distant geometry, in exactly
+     * the way a 1e-4 near floor did for close geometry. Both were fixed by pushing
+     * the clamp out to where it cannot bind.
+     *
+     * WHEN THE CEILING DOES BIND, CONTAINMENT IS GENUINELY VIOLATED. That is not
+     * hidden: the far surface really does lie beyond the far plane and really would
+     * be clipped. The flag is what makes it honest rather than silent, so this test
+     * asserts the flag and does not assert containment.
+     */
+    const absurd = candidate('absurd', FAR_PLANE_CEILING, FAR_PLANE_CEILING);
+    const plan = planDepthSlabs([absurd]);
     const far = plan.slabs.find((slab) => slab.id === 'FAR')!;
 
-    expect(far.far).toBe(slabDefinition('FAR').maxFar);
+    expect(far.far).toBe(FAR_PLANE_CEILING);
     expect(far.farClampedToCeiling).toBe(true);
+    expect(slabDefinition('FAR').maxFar).toBe(FAR_PLANE_CEILING);
+
+    // And the violation is reported rather than concealed.
+    expect(verifyDepthPlan([absurd], plan).contained).toBe(false);
+  });
+
+  it('does not let either clamp bind for any plausible scene', () => {
+    // THE REGRESSION GUARD FOR BOTH CLAMP BUGS. A camera a metre above a surface
+    // and geometry out to a thousand astronomical units must both plan without the
+    // floor or the ceiling taking effect, because when either binds the resulting
+    // plan cannot satisfy containment.
+    //
+    // The standoff is expressed as a multiple of the floor rather than as a
+    // literal, so the test tracks the module's own constant instead of duplicating
+    // it, and stays clear of the exact boundary where f64 rounding could decide the
+    // comparison either way.
+    const earthRadiusUnits = getBody('earth').meanRadiusKm.value / RENDER_UNIT_KM;
+    const standoffUnits = NEAR_PLANE_FLOOR * 10;
+    const thousandAuUnits = (1000 * 1.495978707e8) / RENDER_UNIT_KM;
+
+    const scene = [
+      candidate('surface-skimmer', earthRadiusUnits + standoffUnits, earthRadiusUnits),
+      candidate('remote', thousandAuUnits, 1e3),
+    ];
+
+    const plan = planDepthSlabs(scene);
+    for (const slab of plan.nonEmpty) {
+      expect(slab.nearClampedToFloor, `${slab.id} hit the near floor`).toBe(false);
+      expect(slab.farClampedToCeiling, `${slab.id} hit the far ceiling`).toBe(false);
+    }
+    expect(verifyDepthPlan(scene, plan).contained).toBe(true);
   });
 
   it('leaves an empty slab with zeroed planes rather than stale ones', () => {

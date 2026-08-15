@@ -138,6 +138,56 @@ export interface SlabDefinition {
 }
 
 /**
+ * Absolute floor for any slab's near plane, render units.
+ *
+ * 1e-7 units is 10 centimetres. See the commentary on SlabDefinition.minNear for
+ * why it is this low: a higher floor makes the containment invariant
+ * unsatisfiable for a camera close to a surface, and logarithmic depth means a
+ * near plane costs nothing.
+ *
+ * The same value serves all three slabs. There is no reason for them to differ:
+ * the floor exists only to keep the projection non-degenerate, and a body large
+ * enough to be classified into MIDDLE or FAR while the camera sits just above its
+ * surface would hit the identical problem.
+ */
+export const NEAR_PLANE_FLOOR = 1e-7;
+
+/**
+ * Absolute ceiling for any slab's far plane, render units.
+ *
+ * THE SAME STRUCTURAL FLAW AS THE FLOOR, at the opposite end. An earlier revision
+ * capped the far slab at 1e14 units, and that made the containment invariant
+ * unsatisfiable for sufficiently distant geometry in exactly the way the 1e-4 near
+ * floor did for close geometry: the planner would clamp the far plane in front of a
+ * body's far surface and then its own verifier would reject the plan.
+ *
+ * MEASURED COST OF RAISING IT, log-depth resolution at Neptune's distance of
+ * 4.4e6 units, taking the ceiling as the actual far plane:
+ *
+ *   ceiling    resolution     relative to 1e14
+ *   1e8         4831 km         0.571
+ *   1e10        6039 km         0.714
+ *   1e14        8454 km         1.000
+ *   1e18       10870 km         1.286
+ *   1e30       18116 km         2.143
+ *
+ * 1e18 costs 1.29x against 1e14, and both projection-matrix terms remain
+ * comfortably f32-representable: at near = 1e-7 and far = 1e18, (f+n)/(f-n) is 1.0
+ * and 2fn/(f-n) is 2.0e-7.
+ *
+ * IN PRACTICE THE CEILING NEVER BINDS. A slab's far plane is derived by expansion
+ * from the members that landed in it, so in the Moon-close plus Neptune-visible
+ * scene the middle slab's far plane is 8.71e6, and min(ceiling, 8.71e6) is
+ * unaffected by whether the ceiling is 1e14 or 1e18. The ceiling only takes effect
+ * for geometry beyond 5e17 units, which is about 53000 light years. Raising it is
+ * therefore free for every scene this application renders.
+ *
+ * One value serves all three slabs, for the same reason the floor does: it exists
+ * only to bound the frustum, and any slab can receive a large body.
+ */
+export const FAR_PLANE_CEILING = 1e18;
+
+/**
  * The slab definitions.
  *
  * Ranges are those given in contract section 4.1. They overlap by design.
@@ -152,9 +202,27 @@ export interface SlabDefinition {
  * far plane comes out near 9e6, not 1e13.
  */
 export const SLAB_DEFINITIONS: readonly SlabDefinition[] = [
-  { id: 'NEAR', nominalNear: 1e-1, nominalFar: 1e4, minNear: 1e-4, maxFar: 1e8 },
-  { id: 'MIDDLE', nominalNear: 1e3, nominalFar: 1e7, minNear: 1e-1, maxFar: 1e10 },
-  { id: 'FAR', nominalNear: 1e6, nominalFar: 1e13, minNear: 1e2, maxFar: 1e14 },
+  {
+    id: 'NEAR',
+    nominalNear: 1e-1,
+    nominalFar: 1e4,
+    minNear: NEAR_PLANE_FLOOR,
+    maxFar: FAR_PLANE_CEILING,
+  },
+  {
+    id: 'MIDDLE',
+    nominalNear: 1e3,
+    nominalFar: 1e7,
+    minNear: NEAR_PLANE_FLOOR,
+    maxFar: FAR_PLANE_CEILING,
+  },
+  {
+    id: 'FAR',
+    nominalNear: 1e6,
+    nominalFar: 1e13,
+    minNear: NEAR_PLANE_FLOOR,
+    maxFar: FAR_PLANE_CEILING,
+  },
 ];
 
 /** Looks up a slab definition. */
@@ -549,4 +617,27 @@ export function depthSeparation(
 }
 
 /**
- * Smallest distanc
+ * Smallest distance separation resolvable at a given depth, render units.
+ *
+ * Inverts the depth mapping locally, which turns an abstract precision figure
+ * into a physical one: surfaces closer together than this cannot be ordered.
+ *
+ * For the logarithmic form, d(depth)/d(distance) = 1 / ((1 + d) ln2 log2(1 + far)),
+ * so the resolvable separation is DEPTH_QUANTUM * (1 + d) * ln2 * log2(1 + far).
+ * It grows linearly with distance, which is the property that makes log depth
+ * suitable for astronomical scenes.
+ */
+export function resolvableSeparation(
+  distance: number,
+  near: number,
+  far: number,
+  logarithmic: boolean,
+): number {
+  if (logarithmic) {
+    return DEPTH_QUANTUM * (1 + distance) * Math.LN2 * Math.log2(1 + far);
+  }
+  // Linear: d(z_ndc)/d(distance) = 2 f n / ((f - n) d^2), and stored depth is half
+  // the NDC range, so the derivative of stored depth is f n / ((f - n) d^2).
+  const derivative = (far * near) / ((far - near) * distance * distance);
+  return DEPTH_QUANTUM / derivative;
+}
