@@ -284,6 +284,7 @@ export class BodyVisuals {
     this.sphereGeometry = new SphereGeometry(1, SPHERE_WIDTH_SEGMENTS, SPHERE_HEIGHT_SEGMENTS);
 
     for (const bodyId of bodyIds) {
+      if (bodyId === 'moon' || bodyId === 'pluto') continue;
       const colour = new Color(PLACEHOLDER_COLOURS[bodyId] ?? 0x888888);
       this.baseColours.set(bodyId, colour.clone());
 
@@ -523,6 +524,7 @@ export class BodyVisuals {
     y: number,
     z: number,
   ): void {
+    if (bodyId === 'moon' || bodyId === 'pluto') return;
     const buffer = this.markerBuffers.get(slabId);
     if (buffer === undefined) return;
 
@@ -718,16 +720,18 @@ export class BodyVisuals {
       mercury: ['/models/mercury.glb'],
       venus: ['/models/venus.glb'],
       earth: ['/models/earth.glb'],
-      moon: ['/models/moon.glb'],
       mars: ['/models/mars.glb'],
       jupiter: ['/models/jupiter.glb'],
       saturn: ['/models/saturn.glb'],
       uranus: ['/models/uranus.glb'],
       neptune: ['/models/neptune.glb'],
-      pluto: ['/models/pluto.glb'],
     };
 
-    for (const bodyId of bodyIds) {
+    const activeModelBodies = bodyIds.filter((id) => id in candidateUrls);
+    this.totalModelsCount = activeModelBodies.length;
+    this.modelsLoadedCount = 0;
+
+    for (const bodyId of activeModelBodies) {
       const urls = candidateUrls[bodyId] ?? [`/models/${bodyId}.glb`];
       this.loadModelWithFallback(loader, bodyId, urls, 0);
     }

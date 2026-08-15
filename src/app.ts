@@ -412,6 +412,7 @@ export class SolarSystemApp {
     const fovDeg = this.cameras.sharedState.fovDeg;
 
     for (const c of candidates) {
+      if (c.bodyId === 'moon' || c.bodyId === 'pluto') continue;
       const ndc = projectToNdc(this.cameras, c.relativePosition);
       const px = ndcToPixels(ndc.x, ndc.y, this.widthPx, this.heightPx);
       const body = this.lastReport.snapshot.bodies.find((b) => b.bodyId === c.bodyId);

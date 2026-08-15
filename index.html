@@ -645,6 +645,71 @@
         white-space: pre-wrap;
         z-index: 100;
       }
+      /* ---------------------------------------------------- Under Build Toast / Popup */
+      #under-build-popup {
+        position: fixed;
+        top: 72px;
+        left: 50%;
+        transform: translateX(-50%) translateY(0);
+        background: rgba(18, 14, 28, 0.92);
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65), 0 0 24px rgba(245, 158, 11, 0.25);
+        border-radius: 14px;
+        padding: 12px 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        z-index: 999;
+        backdrop-filter: blur(16px);
+        color: #ffffff;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      #under-build-popup.popup-hidden {
+        opacity: 0;
+        visibility: hidden;
+        transform: translateX(-50%) translateY(-20px);
+        pointer-events: none;
+      }
+
+      .popup-icon {
+        font-size: 24px;
+      }
+
+      .popup-body {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .popup-title {
+        font-family: 'Outfit', sans-serif;
+        font-weight: 700;
+        font-size: 14px;
+        color: #fbbf24;
+      }
+
+      .popup-desc {
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+
+      .popup-close-btn {
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 4px 6px;
+        margin-left: 6px;
+        border-radius: 4px;
+        transition: color 0.2s ease;
+      }
+
+      .popup-close-btn:hover {
+        color: #ffffff;
+      }
     </style>
   </head>
   <body>
@@ -674,6 +739,16 @@
 
     <!-- Interactive 3D Planet Circles & Labels Overlay -->
     <div id="planet-overlay"></div>
+
+    <!-- Under Build Toast / Popup -->
+    <div id="under-build-popup" class="popup-hidden" role="alert">
+      <div class="popup-icon">🚧</div>
+      <div class="popup-body">
+        <div class="popup-title" id="popup-title">Under Build</div>
+        <div class="popup-desc" id="popup-desc">Orbital theory and 3D trajectory are currently under construction (Planned in Milestone M4).</div>
+      </div>
+      <button class="popup-close-btn" id="popup-close-btn" title="Dismiss">✕</button>
+    </div>
 
     <!-- Top Quick-Selector Navigation Bar -->
     <nav id="top-bar">

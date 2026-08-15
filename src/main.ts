@@ -38,13 +38,11 @@ const PLANET_METADATA: Record<string, PlanetMeta> = {
   mercury: { icon: '☿', name: 'Mercury', type: 'Terrestrial Planet', color: '#adb5bd', glow: 'rgba(173, 181, 189, 0.5)' },
   venus: { icon: '♀', name: 'Venus', type: 'Terrestrial Planet', color: '#f4a261', glow: 'rgba(244, 162, 97, 0.6)' },
   earth: { icon: '⊕', name: 'Earth', type: 'Terrestrial Planet', color: '#4ea8de', glow: 'rgba(78, 168, 222, 0.7)' },
-  moon: { icon: '🌙', name: 'Moon', type: 'Natural Satellite (Luna)', color: '#e2eafc', glow: 'rgba(226, 234, 252, 0.5)' },
   mars: { icon: '♂', name: 'Mars', type: 'Terrestrial Planet', color: '#e76f51', glow: 'rgba(231, 111, 81, 0.7)' },
   jupiter: { icon: '♃', name: 'Jupiter', type: 'Gas Giant', color: '#e9c46a', glow: 'rgba(233, 196, 106, 0.7)' },
   saturn: { icon: '♄', name: 'Saturn', type: 'Gas Giant (Ring System)', color: '#f4a261', glow: 'rgba(244, 162, 97, 0.7)' },
   uranus: { icon: '⛢', name: 'Uranus', type: 'Ice Giant', color: '#48cae4', glow: 'rgba(72, 202, 228, 0.7)' },
   neptune: { icon: '♆', name: 'Neptune', type: 'Ice Giant', color: '#0077b6', glow: 'rgba(0, 119, 182, 0.7)' },
-  pluto: { icon: '♇', name: 'Pluto', type: 'Dwarf Planet (Kuiper Belt)', color: '#b8bedd', glow: 'rgba(184, 190, 221, 0.5)' },
 };
 
 interface PointerRecord {
@@ -287,6 +285,51 @@ function main(): void {
     updateNavActive();
   }
 
+  // Under Build Toast Popup for Moon and Pluto
+  const underBuildPopup = document.querySelector<HTMLElement>('#under-build-popup');
+  const popupTitle = document.querySelector<HTMLElement>('#popup-title');
+  const popupDesc = document.querySelector<HTMLElement>('#popup-desc');
+  const popupCloseBtn = document.querySelector<HTMLButtonElement>('#popup-close-btn');
+  let popupTimeout: number | null = null;
+
+  function showUnderBuildPopup(bodyId: 'moon' | 'pluto'): void {
+    if (!underBuildPopup) return;
+    if (popupTimeout !== null) {
+      window.clearTimeout(popupTimeout);
+    }
+
+    if (bodyId === 'moon') {
+      if (popupTitle) popupTitle.textContent = '🌙 Moon: Under Build';
+      if (popupDesc) {
+        popupDesc.textContent =
+          'Lunar orbital theory (ELP2000) is in development (Milestone M4). Model loading is deferred until orbital ephemeris is available.';
+      }
+    } else {
+      if (popupTitle) popupTitle.textContent = '♇ Pluto: Under Build';
+      if (popupDesc) {
+        popupDesc.textContent =
+          'Dwarf planet orbital propagator is in development (Milestone M4). Model loading is deferred until orbital ephemeris is available.';
+      }
+    }
+
+    underBuildPopup.classList.remove('popup-hidden');
+
+    popupTimeout = window.setTimeout(() => {
+      underBuildPopup.classList.add('popup-hidden');
+      popupTimeout = null;
+    }, 4500);
+  }
+
+  if (popupCloseBtn && underBuildPopup) {
+    popupCloseBtn.addEventListener('click', () => {
+      underBuildPopup.classList.add('popup-hidden');
+      if (popupTimeout !== null) {
+        window.clearTimeout(popupTimeout);
+        popupTimeout = null;
+      }
+    });
+  }
+
   // Top Bar Navigation clicks
   topBar.addEventListener('click', (e) => {
     const target = (e.target as HTMLElement).closest<HTMLButtonElement>('.nav-btn');
@@ -294,6 +337,9 @@ function main(): void {
     const body = target.getAttribute('data-body');
     if (body === 'overview' || !body) {
       app.overview();
+    } else if (body === 'moon' || body === 'pluto') {
+      showUnderBuildPopup(body);
+      return;
     } else {
       app.focus(body);
     }
